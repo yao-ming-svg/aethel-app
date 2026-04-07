@@ -67,6 +67,7 @@
 }
 
 .input {
+  width: 100%;
   padding: 9px 14px;
   border: 1px solid var(--border);
   border-radius: 7px;
