@@ -32,6 +32,7 @@ export default function AIAssistant() {
   const [error, setError] = useState(null)
   const [pendingAttachments, setPendingAttachments] = useState([])
   const [extracting, setExtracting] = useState(false)
+  const [resourcePrompt, setResourcePrompt] = useState(null)
   const endRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -95,6 +96,18 @@ export default function AIAssistant() {
     setPendingAttachments((list) => list.filter((a) => a.id !== id))
   }
 
+  function askSaveToResources(fileName) {
+    return new Promise((resolve) => {
+      setResourcePrompt({ fileName, resolve })
+    })
+  }
+
+  function answerResourcePrompt(shouldSave) {
+    const resolve = resourcePrompt?.resolve
+    setResourcePrompt(null)
+    resolve?.(shouldSave)
+  }
+
   async function onFilesChosen(e) {
     const files = e.target.files
     if (!files?.length) return
@@ -121,11 +134,14 @@ export default function AIAssistant() {
         const { name, text } = await extractDocumentText(file)
         setPendingAttachments((prev) => [...prev, { id: newId(), name, text }])
         added += 1
-        void addResource({ file, label: null }).then((res) => {
-          if (!res.ok) {
-            console.warn('[Resources]', res.error)
+
+        const saveToResources = await askSaveToResources(name)
+        if (saveToResources) {
+          const saved = await addResource({ file, label: null })
+          if (!saved.ok) {
+            setError(`Attached for chat, but could not save to Resources: ${saved.error}`)
           }
-        })
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not read that file.')
       } finally {
@@ -296,6 +312,40 @@ export default function AIAssistant() {
         </div>
         <p className={styles.uploadHint}>Attachments: PDF or Word (.docx) only, up to {MAX_ATTACHMENTS} files, 15 MB each.</p>
       </div>
+
+      {resourcePrompt && (
+        <div className={styles.resourcePromptBackdrop} role="presentation">
+          <div
+            className={styles.resourcePromptPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resource-save-title"
+          >
+            <h2 id="resource-save-title" className={styles.resourcePromptTitle}>
+              Save file to Resources?
+            </h2>
+            <p className={styles.resourcePromptText}>
+              {resourcePrompt.fileName} will stay attached to this chat either way.
+            </p>
+            <div className={styles.resourcePromptActions}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => answerResourcePrompt(false)}
+              >
+                Use in chat only
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => answerResourcePrompt(true)}
+              >
+                Save to Resources
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
