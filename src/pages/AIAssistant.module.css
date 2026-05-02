@@ -377,3 +377,54 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+
+.resourcePromptBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.resourcePromptPanel {
+  width: min(420px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+  padding: 18px;
+}
+
+.resourcePromptTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.resourcePromptText {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.resourcePromptActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+@media (max-width: 520px) {
+  .resourcePromptActions {
+    flex-direction: column-reverse;
+  }
+
+  .resourcePromptActions button {
+    justify-content: center;
+    width: 100%;
+  }
+}
