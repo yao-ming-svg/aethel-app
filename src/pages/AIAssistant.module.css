@@ -32,6 +32,16 @@
   margin-bottom: 12px;
 }
 
+.chatError {
+  background: rgba(220, 53, 69, 0.08);
+  border: 1px solid rgba(220, 53, 69, 0.35);
+  color: var(--text);
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
 .chatWindow {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -44,19 +54,110 @@
   margin-bottom: 12px;
 }
 
+.chatWindowActive {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  max-height: 420px;
+  overflow: hidden;
+  padding: 0;
+}
+
 .chatEmpty {
   text-align: center;
   color: var(--text-muted);
   font-size: 14px;
 }
 
+.messageList {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.msgUser,
+.msgAssistant {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 92%;
+}
+
+.msgUser {
+  align-self: flex-end;
+  text-align: right;
+}
+
+.msgAssistant {
+  align-self: flex-start;
+  text-align: left;
+}
+
+/* Markdown assistant bubbles: let headings/lists control spacing */
+.msgAssistant .msgBody {
+  white-space: normal;
+}
+
+.msgLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.msgBody {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.msgUser .msgBody {
+  background: var(--primary);
+  color: #fff;
+  border-color: transparent;
+}
+
+.msgBodyMuted {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 10px 12px;
+}
+
+.scrollAnchor {
+  list-style: none;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+}
+
 .inputRow {
   display: flex;
   gap: 8px;
+  align-items: stretch;
+}
+
+.chatInputWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .chatInput {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   padding: 9px 14px;
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -65,11 +166,97 @@
   outline: none;
   color: var(--text);
   background: var(--bg);
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.chatInputBehindLoading {
+  opacity: 0;
+  caret-color: transparent;
 }
 
 .chatInput:focus {
   border-color: var(--primary);
+}
+
+.chatInputLoadingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding: 9px 14px;
+  box-sizing: border-box;
+  font-size: 14px;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  pointer-events: none;
+}
+
+.chatInputLoadingText {
+  margin-right: 1px;
+}
+
+.chatInputLoadingDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 1px;
+}
+
+.chatInputLoadingDot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: chatLoadingDot 1.05s ease-in-out infinite;
+}
+
+.chatInputLoadingDot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.chatInputLoadingDot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes chatLoadingDot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.typingDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.typingDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: chatLoadingDot 1.05s ease-in-out infinite;
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.36s;
 }
 
 .uploadBtn {
@@ -82,4 +269,111 @@
 
 .uploadBtn:hover {
   background: var(--border);
+}
+
+.uploadBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.fileInputHidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pendingAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pendingChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.pendingChipName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.pendingChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pendingChipRemove:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+.pendingChipRemove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.attachmentTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  justify-content: flex-end;
+}
+
+.msgAssistant .attachmentTags {
+  justify-content: flex-start;
+}
+
+.attachmentTag {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userPlain {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.userPlainMuted {
+  font-size: 13px;
+  opacity: 0.85;
+  font-style: italic;
+}
+
+.uploadHint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }

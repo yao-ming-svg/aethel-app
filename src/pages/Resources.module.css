@@ -6,7 +6,24 @@
 
 .searchBar {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
+}
+
+.inlineLink {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.inlineLink:hover {
+  opacity: 0.88;
 }
 
 .searchInput {
@@ -28,6 +45,7 @@
 
 .filterRow {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -57,4 +75,237 @@
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 4px;
+}
+
+.savedHint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.banner {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.bannerOk {
+  background: rgba(25, 135, 84, 0.1);
+  border: 1px solid rgba(25, 135, 84, 0.35);
+  color: var(--text);
+}
+
+.bannerError {
+  background: rgba(220, 53, 69, 0.08);
+  border: 1px solid rgba(220, 53, 69, 0.35);
+  color: var(--text);
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.modalTitle {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+
+.modalDesc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.textInput,
+.fileInput,
+.selectInput {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.selectInput {
+  cursor: pointer;
+  width: 100%;
+  max-width: 100%;
+}
+
+.textInput:focus,
+.fileInput:focus,
+.selectInput:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.newLabelRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.newLabelRow .textInput {
+  flex: 1;
+  min-width: 160px;
+}
+
+.editCol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  max-width: 320px;
+}
+
+.editActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.tableWrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cellName {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.cellLabel {
+  min-width: 220px;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.labelText {
+  color: var(--text);
+}
+
+.labelNone {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.editRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.editRow .textInput {
+  flex: 1;
+  min-width: 140px;
+}
+
+.cellDate {
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.cellActions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.btnSm {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.btnDanger {
+  border-color: rgba(220, 53, 69, 0.45);
+  color: #b02a37;
+}
+
+.btnDanger:hover {
+  background: rgba(220, 53, 69, 0.06);
 }
