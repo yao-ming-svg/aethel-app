@@ -49,10 +49,11 @@ export default function AIAssistant() {
 
     setError(null)
     setInput('')
+    const sentAttachments = pendingAttachments
 
     const documentBlocks =
-      pendingAttachments.length > 0
-        ? pendingAttachments.map(({ name, text }) => ({ name, text }))
+      sentAttachments.length > 0
+        ? sentAttachments.map(({ name, text }) => ({ name, text }))
         : undefined
 
     const userMsg = {
@@ -74,9 +75,7 @@ export default function AIAssistant() {
       setMessages((prev) => prev.slice(0, -1))
       setInput(question)
       if (documentBlocks?.length) {
-        setPendingAttachments(
-          documentBlocks.map((d) => ({ id: newId(), name: d.name, text: d.text })),
-        )
+        setPendingAttachments(sentAttachments)
       }
     } finally {
       setLoading(false)
@@ -127,9 +126,12 @@ export default function AIAssistant() {
   }
 
   async function attachSavedResource(resource) {
+    if (pendingAttachments.some((a) => a.sourceResourceId === resource.id)) {
+      return
+    }
+
     if (pendingAttachments.length >= MAX_ATTACHMENTS) {
       setError(`You can attach at most ${MAX_ATTACHMENTS} files at once.`)
-      setResourcePickerOpen(false)
       return
     }
 
@@ -143,8 +145,10 @@ export default function AIAssistant() {
         return
       }
       const { name, text } = await extractDocumentText(result.file)
-      setPendingAttachments((prev) => [...prev, { id: newId(), name, text }])
-      setResourcePickerOpen(false)
+      setPendingAttachments((prev) => [
+        ...prev,
+        { id: newId(), name, text, sourceResourceId: resource.id },
+      ])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read that resource.')
     } finally {
@@ -177,7 +181,8 @@ export default function AIAssistant() {
       setExtracting(true)
       try {
         const { name, text } = await extractDocumentText(file)
-        setPendingAttachments((prev) => [...prev, { id: newId(), name, text }])
+        const attachmentId = newId()
+        setPendingAttachments((prev) => [...prev, { id: attachmentId, name, text }])
         added += 1
 
         const saveToResources = await askSaveToResources(name)
@@ -185,6 +190,14 @@ export default function AIAssistant() {
           const saved = await addResource({ file, label: null })
           if (!saved.ok) {
             setError(`Attached for chat, but could not save to Resources: ${saved.error}`)
+          } else {
+            setPendingAttachments((prev) =>
+              prev.map((attachment) =>
+                attachment.id === attachmentId
+                  ? { ...attachment, sourceResourceId: saved.id }
+                  : attachment,
+              ),
+            )
           }
         }
       } catch (err) {
@@ -196,6 +209,9 @@ export default function AIAssistant() {
   }
 
   const canSend = (input.trim().length > 0 || pendingAttachments.length > 0) && !loading && !extracting
+  const attachedResourceIds = new Set(
+    pendingAttachments.map((a) => a.sourceResourceId).filter(Boolean),
+  )
 
   return (
     <div className="page">
@@ -415,20 +431,24 @@ export default function AIAssistant() {
               <p className={styles.resourcePromptText}>No saved resources yet.</p>
             ) : (
               <div className={styles.resourcePickerList}>
-                {resources.map((resource) => (
-                  <button
-                    key={resource.id}
-                    type="button"
-                    className={styles.resourcePickerItem}
-                    onClick={() => attachSavedResource(resource)}
-                    disabled={extracting}
-                  >
-                    <span className={styles.resourcePickerName}>{resource.name}</span>
-                    <span className={styles.resourcePickerMeta}>
-                      {attachingResourceId === resource.id ? 'Reading...' : resource.label || 'No label'}
-                    </span>
-                  </button>
-                ))}
+                {resources.map((resource) => {
+                  const alreadyAttached = attachedResourceIds.has(resource.id)
+                  const isReading = attachingResourceId === resource.id
+                  return (
+                    <button
+                      key={resource.id}
+                      type="button"
+                      className={`${styles.resourcePickerItem} ${alreadyAttached ? styles.resourcePickerItemAttached : ''}`}
+                      onClick={() => attachSavedResource(resource)}
+                      disabled={extracting || alreadyAttached || pendingAttachments.length >= MAX_ATTACHMENTS}
+                    >
+                      <span className={styles.resourcePickerName}>{resource.name}</span>
+                      <span className={styles.resourcePickerMeta}>
+                        {alreadyAttached ? 'Added' : isReading ? 'Reading...' : resource.label || 'No label'}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             )}
             <div className={styles.resourcePromptActions}>
@@ -438,7 +458,7 @@ export default function AIAssistant() {
                 disabled={extracting}
                 onClick={() => setResourcePickerOpen(false)}
               >
-                Cancel
+                Done
               </button>
             </div>
           </div>

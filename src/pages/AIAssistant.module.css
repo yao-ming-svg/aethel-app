@@ -497,6 +497,17 @@
   cursor: wait;
 }
 
+.resourcePickerItemAttached,
+.resourcePickerItemAttached:hover:not(:disabled) {
+  border-color: var(--border);
+  background: #e5e7eb;
+  color: var(--text-muted);
+}
+
+.resourcePickerItemAttached:disabled {
+  cursor: not-allowed;
+}
+
 .resourcePickerName {
   overflow: hidden;
   text-overflow: ellipsis;
