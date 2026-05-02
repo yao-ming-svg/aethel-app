@@ -179,6 +179,27 @@ export function ResourcesProvider({ children }) {
     [user],
   )
 
+  const getResourceFile = useCallback(
+    async (id) => {
+      if (!user?.id) return { ok: false, error: 'Not signed in.' }
+      const list = readResourcesMetaSnapshot(user.id)
+      const meta = list.find((r) => r.id === id)
+      if (!meta) return { ok: false, error: 'Resource not found.' }
+
+      const buf = await getResourceBlob(user.id, id)
+      if (!buf) return { ok: false, error: 'File data missing.' }
+
+      return {
+        ok: true,
+        file: new File([buf], meta.name || 'document', {
+          type: meta.mime || 'application/octet-stream',
+          lastModified: meta.createdAt ? new Date(meta.createdAt).getTime() : Date.now(),
+        }),
+      }
+    },
+    [user],
+  )
+
   const value = useMemo(
     () => ({
       resources,
@@ -188,6 +209,7 @@ export function ResourcesProvider({ children }) {
       updateResourceLabel,
       removeResource,
       downloadResource,
+      getResourceFile,
       reloadResources: loadMeta,
     }),
     [
@@ -198,6 +220,7 @@ export function ResourcesProvider({ children }) {
       updateResourceLabel,
       removeResource,
       downloadResource,
+      getResourceFile,
       loadMeta,
     ],
   )

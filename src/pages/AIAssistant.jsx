@@ -25,7 +25,7 @@ function newId() {
 }
 
 export default function AIAssistant() {
-  const { addResource } = useResources()
+  const { resources, addResource, getResourceFile } = useResources()
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
@@ -33,6 +33,9 @@ export default function AIAssistant() {
   const [pendingAttachments, setPendingAttachments] = useState([])
   const [extracting, setExtracting] = useState(false)
   const [resourcePrompt, setResourcePrompt] = useState(null)
+  const [attachmentChoiceOpen, setAttachmentChoiceOpen] = useState(false)
+  const [resourcePickerOpen, setResourcePickerOpen] = useState(false)
+  const [attachingResourceId, setAttachingResourceId] = useState(null)
   const endRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -46,10 +49,11 @@ export default function AIAssistant() {
 
     setError(null)
     setInput('')
+    const sentAttachments = pendingAttachments
 
     const documentBlocks =
-      pendingAttachments.length > 0
-        ? pendingAttachments.map(({ name, text }) => ({ name, text }))
+      sentAttachments.length > 0
+        ? sentAttachments.map(({ name, text }) => ({ name, text }))
         : undefined
 
     const userMsg = {
@@ -71,9 +75,7 @@ export default function AIAssistant() {
       setMessages((prev) => prev.slice(0, -1))
       setInput(question)
       if (documentBlocks?.length) {
-        setPendingAttachments(
-          documentBlocks.map((d) => ({ id: newId(), name: d.name, text: d.text })),
-        )
+        setPendingAttachments(sentAttachments)
       }
     } finally {
       setLoading(false)
@@ -108,6 +110,53 @@ export default function AIAssistant() {
     resolve?.(shouldSave)
   }
 
+  function openAttachmentChoice() {
+    setError(null)
+    setAttachmentChoiceOpen(true)
+  }
+
+  function chooseComputerUpload() {
+    setAttachmentChoiceOpen(false)
+    fileInputRef.current?.click()
+  }
+
+  function chooseSavedResource() {
+    setAttachmentChoiceOpen(false)
+    setResourcePickerOpen(true)
+  }
+
+  async function attachSavedResource(resource) {
+    if (pendingAttachments.some((a) => a.sourceResourceId === resource.id)) {
+      return
+    }
+
+    if (pendingAttachments.length >= MAX_ATTACHMENTS) {
+      setError(`You can attach at most ${MAX_ATTACHMENTS} files at once.`)
+      return
+    }
+
+    setError(null)
+    setExtracting(true)
+    setAttachingResourceId(resource.id)
+    try {
+      const result = await getResourceFile(resource.id)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      const { name, text } = await extractDocumentText(result.file)
+      setPendingAttachments((prev) => [
+        ...prev,
+        { id: newId(), name, text, sourceResourceId: resource.id },
+      ])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read that resource.')
+    } finally {
+      setAttachingResourceId(null)
+      setExtracting(false)
+    }
+  }
+
   async function onFilesChosen(e) {
     const files = e.target.files
     if (!files?.length) return
@@ -132,7 +181,8 @@ export default function AIAssistant() {
       setExtracting(true)
       try {
         const { name, text } = await extractDocumentText(file)
-        setPendingAttachments((prev) => [...prev, { id: newId(), name, text }])
+        const attachmentId = newId()
+        setPendingAttachments((prev) => [...prev, { id: attachmentId, name, text }])
         added += 1
 
         const saveToResources = await askSaveToResources(name)
@@ -140,6 +190,14 @@ export default function AIAssistant() {
           const saved = await addResource({ file, label: null })
           if (!saved.ok) {
             setError(`Attached for chat, but could not save to Resources: ${saved.error}`)
+          } else {
+            setPendingAttachments((prev) =>
+              prev.map((attachment) =>
+                attachment.id === attachmentId
+                  ? { ...attachment, sourceResourceId: saved.id }
+                  : attachment,
+              ),
+            )
           }
         }
       } catch (err) {
@@ -151,6 +209,9 @@ export default function AIAssistant() {
   }
 
   const canSend = (input.trim().length > 0 || pendingAttachments.length > 0) && !loading && !extracting
+  const attachedResourceIds = new Set(
+    pendingAttachments.map((a) => a.sourceResourceId).filter(Boolean),
+  )
 
   return (
     <div className="page">
@@ -302,7 +363,7 @@ export default function AIAssistant() {
             type="button"
             title="Attach PDF or Word (.docx)"
             disabled={loading || extracting || pendingAttachments.length >= MAX_ATTACHMENTS}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={openAttachmentChoice}
           >
             📎
           </button>
@@ -312,6 +373,97 @@ export default function AIAssistant() {
         </div>
         <p className={styles.uploadHint}>Attachments: PDF or Word (.docx) only, up to {MAX_ATTACHMENTS} files, 15 MB each.</p>
       </div>
+
+      {attachmentChoiceOpen && (
+        <div
+          className={styles.resourcePromptBackdrop}
+          role="presentation"
+          onClick={() => setAttachmentChoiceOpen(false)}
+        >
+          <div
+            className={styles.resourcePromptPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="attachment-choice-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="attachment-choice-title" className={styles.resourcePromptTitle}>
+              Add an attachment
+            </h2>
+            <div className={styles.attachChoiceGrid}>
+              <button type="button" className={styles.attachChoiceBtn} onClick={chooseComputerUpload}>
+                <span className={styles.attachChoiceTitle}>Upload file</span>
+                <span className={styles.attachChoiceText}>Choose a PDF or Word file from this device.</span>
+              </button>
+              <button
+                type="button"
+                className={styles.attachChoiceBtn}
+                onClick={chooseSavedResource}
+                disabled={resources.length === 0}
+              >
+                <span className={styles.attachChoiceTitle}>Use resource</span>
+                <span className={styles.attachChoiceText}>
+                  {resources.length === 0 ? 'No saved resources yet.' : 'Pick a file from Resources.'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resourcePickerOpen && (
+        <div
+          className={styles.resourcePromptBackdrop}
+          role="presentation"
+          onClick={() => !extracting && setResourcePickerOpen(false)}
+        >
+          <div
+            className={`${styles.resourcePromptPanel} ${styles.resourcePickerPanel}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resource-picker-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="resource-picker-title" className={styles.resourcePromptTitle}>
+              Choose from Resources
+            </h2>
+            {resources.length === 0 ? (
+              <p className={styles.resourcePromptText}>No saved resources yet.</p>
+            ) : (
+              <div className={styles.resourcePickerList}>
+                {resources.map((resource) => {
+                  const alreadyAttached = attachedResourceIds.has(resource.id)
+                  const isReading = attachingResourceId === resource.id
+                  return (
+                    <button
+                      key={resource.id}
+                      type="button"
+                      className={`${styles.resourcePickerItem} ${alreadyAttached ? styles.resourcePickerItemAttached : ''}`}
+                      onClick={() => attachSavedResource(resource)}
+                      disabled={extracting || alreadyAttached || pendingAttachments.length >= MAX_ATTACHMENTS}
+                    >
+                      <span className={styles.resourcePickerName}>{resource.name}</span>
+                      <span className={styles.resourcePickerMeta}>
+                        {alreadyAttached ? 'Added' : isReading ? 'Reading...' : resource.label || 'No label'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <div className={styles.resourcePromptActions}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={extracting}
+                onClick={() => setResourcePickerOpen(false)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {resourcePrompt && (
         <div className={styles.resourcePromptBackdrop} role="presentation">
