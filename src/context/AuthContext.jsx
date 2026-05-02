@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { purgeUserResources } from '../lib/resourceBlobStore'
 
 const AuthContext = createContext(null)
 
@@ -104,11 +105,13 @@ export function AuthProvider({ children }) {
   }
 
   function deleteAccount() {
+    const uid = user.id
     const users = getUsers()
-    localStorage.setItem(USERS_KEY, JSON.stringify(users.filter((u) => u.id !== user.id)))
+    localStorage.setItem(USERS_KEY, JSON.stringify(users.filter((u) => u.id !== uid)))
     // Remove all data associated with this user
-    localStorage.removeItem(`aethel_courses_${user.id}`)
-    localStorage.removeItem(`aethel_onboarded_${user.id}`)
+    localStorage.removeItem(`aethel_courses_${uid}`)
+    localStorage.removeItem(`aethel_onboarded_${uid}`)
+    void purgeUserResources(uid)
     localStorage.removeItem(SESSION_KEY)
     setUser(null)
   }

@@ -1,0 +1,125 @@
+/* Outer assistant bubble alignment */
+.root {
+  font-size: 14px;
+  line-height: 1.5;
+  color: inherit;
+  text-align: left;
+}
+
+.root > :first-child {
+  margin-top: 0;
+}
+
+.root > :last-child {
+  margin-bottom: 0;
+}
+
+/* ### Study Activities: — larger, bold section title */
+.sectionHeading {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.sectionHeading:not(:first-child) {
+  margin-top: 14px;
+}
+
+.subSectionHeading {
+  margin: 10px 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.p {
+  margin: 0 0 8px;
+}
+
+.p:last-child {
+  margin-bottom: 0;
+}
+
+.ul,
+.ol {
+  margin: 0 0 8px;
+  padding-left: 1.35em;
+}
+
+.ul {
+  list-style-type: disc;
+}
+
+.ol {
+  list-style-type: decimal;
+}
+
+/* Nested lists (bullet under subheader) */
+.ul .ul,
+.ol .ol,
+.ul .ol,
+.ol .ul {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.li {
+  margin: 4px 0;
+}
+
+/* Parent row that only introduces a nested list (e.g. **Interactive Models:** + bullets below):
+   hide its marker so you do not get a bullet on the subheader and again on each nested item. */
+.li:has(> .ul),
+.li:has(> .ol) {
+  list-style: none;
+}
+
+.li::marker {
+  color: var(--text-muted);
+}
+
+/* - **Interactive Models:** — bold + italic (top-level section list item) */
+.root > .ul > .li > .strong,
+.root > .ul > .li > .p:first-child > .strong:first-child,
+.root > .ol > .li > .strong,
+.root > .ol > .li > .p:first-child > .strong:first-child {
+  font-weight: 700;
+  font-style: italic;
+}
+
+/* Nested bullets under a subheader: **bold** is emphasis, not italic subheader */
+.root > .ul > .li > ul .strong,
+.root > .ul > .li > ol .strong,
+.root > .ol > .li > ul .strong,
+.root > .ol > .li > ol .strong {
+  font-style: normal;
+}
+
+.strong {
+  font-weight: 700;
+}
+
+.em {
+  font-style: italic;
+}
+
+.link {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  opacity: 0.9;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
