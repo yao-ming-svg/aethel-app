@@ -61,17 +61,17 @@ export function ResourcesProvider({ children }) {
   )
 
   /**
-   * @param {{ file: File, label?: string | null }} opts label null/empty = no label
+   * @param {{ file: File, label?: string | null, id?: string }} opts
    * @returns {Promise<{ ok: true, id: string } | { ok: false, error: string }>}
    */
   const addResource = useCallback(
-    async ({ file, label = null }) => {
+    async ({ file, label = null, id: providedId = null }) => {
       if (!user?.id) return { ok: false, error: 'You must be signed in to save resources.' }
 
       const check = validateChatFile(file)
       if (!check.ok) return { ok: false, error: check.error }
 
-      const id = crypto.randomUUID()
+      const id = providedId || crypto.randomUUID()
       const trimmed = typeof label === 'string' ? label.trim() : ''
       const meta = {
         id,

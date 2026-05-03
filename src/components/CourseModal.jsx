@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { useResources } from '../context/ResourcesContext'
+import { saveResourceBlob, deleteResourceBlob } from '../lib/resourceBlobStore'
 import styles from './CourseModal.module.css'
 
 export const COLORS = [
@@ -26,6 +29,8 @@ function formatSize(bytes) {
 }
 
 export default function CourseModal({ initial, onSave, onClose }) {
+  const { user } = useAuth()
+  const { addResource, removeResource } = useResources()
   const isEdit = Boolean(initial)
   const [course, setCourse] = useState(() =>
     initial ? { ...initial, schedule: initial.schedule ?? [], materials: initial.materials ?? [] } : blankCourse(),
@@ -63,19 +68,26 @@ export default function CourseModal({ initial, onSave, onClose }) {
     }))
   }
 
-  function addFiles(fileList) {
-    const incoming = Array.from(fileList).map((f) => ({
-      id: crypto.randomUUID(),
-      name: f.name,
-      size: f.size,
-      type: f.type,
-      addedAt: new Date().toISOString(),
-    }))
+  async function addFiles(fileList) {
+    const incoming = await Promise.all(
+      Array.from(fileList).map(async (f) => {
+        const id = crypto.randomUUID()
+        const label = course.name.trim() || 'Course Material'
+        const result = await addResource({ file: f, label, id })
+        if (!result.ok && user?.id) {
+          // Not a PDF/DOCX — save blob only, skip Resources tab
+          try { await saveResourceBlob(user.id, id, await f.arrayBuffer()) } catch { /* ignore */ }
+        }
+        return { id, name: f.name, size: f.size, type: f.type, addedAt: new Date().toISOString() }
+      })
+    )
     setCourse((c) => ({ ...c, materials: [...c.materials, ...incoming] }))
   }
 
   function removeMaterial(id) {
     setCourse((c) => ({ ...c, materials: c.materials.filter((m) => m.id !== id) }))
+    removeResource(id)
+    if (user?.id) deleteResourceBlob(user.id, id).catch(() => {})
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────

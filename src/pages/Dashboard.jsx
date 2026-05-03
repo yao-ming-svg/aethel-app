@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useCourses } from '../context/CoursesContext'
 import CourseModal from '../components/CourseModal'
+import StudyTimer from '../components/StudyTimer'
 import { TASK_TYPES } from '../components/TaskModal'
 import '../App.css'
 import styles from './Dashboard.module.css'
@@ -97,6 +98,8 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      <StudyTimer />
 
       {/* Upcoming tasks */}
       <div className={styles.sectionHeader}>
