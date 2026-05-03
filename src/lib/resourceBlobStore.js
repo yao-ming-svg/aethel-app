@@ -119,10 +119,32 @@ export function writeLabelPresets(userId, list) {
   localStorage.setItem(resourceLabelsKey(userId), JSON.stringify(list))
 }
 
+export function resourceCourseLabelsKey(userId) {
+  return `aethel_resource_course_labels_${userId}`
+}
+
+export function readCourseLabels(userId) {
+  try {
+    const raw = localStorage.getItem(resourceCourseLabelsKey(userId))
+    const arr = raw ? JSON.parse(raw) : []
+    if (!Array.isArray(arr)) return []
+    return [...new Set(arr.map((x) => String(x).trim()).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    )
+  } catch {
+    return []
+  }
+}
+
+export function writeCourseLabels(userId, list) {
+  localStorage.setItem(resourceCourseLabelsKey(userId), JSON.stringify(list))
+}
+
 /** Remove all saved resource metadata and file blobs for a user (e.g. account deletion). */
 export async function purgeUserResources(userId) {
   const list = readResourcesMetaSnapshot(userId)
   await deleteResourceBlobsForMetaList(userId, list)
   localStorage.removeItem(resourcesMetaKey(userId))
   localStorage.removeItem(resourceLabelsKey(userId))
+  localStorage.removeItem(resourceCourseLabelsKey(userId))
 }

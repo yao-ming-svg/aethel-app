@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
-import { mergeLabelPresets } from '../lib/defaultResourceLabels'
+import { useCourses } from './CoursesContext'
+import { mergeLabelPresets, mergeCourseLabels } from '../lib/defaultResourceLabels'
 import { validateChatFile } from '../lib/documentExtract'
 import {
   deleteResourceBlob,
@@ -10,6 +11,8 @@ import {
   resourcesMetaKey,
   saveResourceBlob,
   writeLabelPresets,
+  readCourseLabels,
+  writeCourseLabels,
 } from '../lib/resourceBlobStore'
 
 const ResourcesContext = createContext(null)
@@ -27,13 +30,16 @@ function sortNewestFirst(list) {
 
 export function ResourcesProvider({ children }) {
   const { user } = useAuth()
+  const { courses } = useCourses()
   const [resources, setResources] = useState([])
   const [labelPresets, setLabelPresets] = useState([])
+  const [courseLabels, setCourseLabels] = useState([])
 
   const loadMeta = useCallback(() => {
     if (!user?.id) {
       setResources([])
       setLabelPresets([])
+      setCourseLabels([])
       return
     }
     const list = sortNewestFirst(readResourcesMetaSnapshot(user.id))
@@ -43,7 +49,14 @@ export function ResourcesProvider({ children }) {
     const merged = mergeLabelPresets(stored, fromFiles)
     writeLabelPresets(user.id, merged)
     setLabelPresets(merged)
-  }, [user])
+
+    // Load course labels: combine stored labels + actual course names
+    const storedCourseLabels = readCourseLabels(user.id)
+    const courseNames = courses.map((c) => c.name).filter(Boolean)
+    const mergedCourseLabels = mergeCourseLabels(storedCourseLabels, courseNames)
+    writeCourseLabels(user.id, mergedCourseLabels)
+    setCourseLabels(mergedCourseLabels)
+  }, [user, courses])
 
   useEffect(() => {
     const id = requestAnimationFrame(() => loadMeta())
@@ -61,11 +74,11 @@ export function ResourcesProvider({ children }) {
   )
 
   /**
-   * @param {{ file: File, label?: string | null, id?: string }} opts
+   * @param {{ file: File, label?: string | null, courseLabel?: string | null, id?: string }} opts
    * @returns {Promise<{ ok: true, id: string } | { ok: false, error: string }>}
    */
   const addResource = useCallback(
-    async ({ file, label = null, id: providedId = null }) => {
+    async ({ file, label = null, courseLabel = null, id: providedId = null }) => {
       if (!user?.id) return { ok: false, error: 'You must be signed in to save resources.' }
 
       const check = validateChatFile(file)
@@ -73,10 +86,12 @@ export function ResourcesProvider({ children }) {
 
       const id = providedId || crypto.randomUUID()
       const trimmed = typeof label === 'string' ? label.trim() : ''
+      const courseTrimmed = typeof courseLabel === 'string' ? courseLabel.trim() : ''
       const meta = {
         id,
         name: file.name || 'document',
         label: trimmed.length > 0 ? trimmed.slice(0, 120) : null,
+        courseLabel: courseTrimmed.length > 0 ? courseTrimmed.slice(0, 120) : null,
         mime: inferMime(file),
         createdAt: new Date().toISOString(),
       }
@@ -96,6 +111,11 @@ export function ResourcesProvider({ children }) {
           const next = mergeLabelPresets(readLabelPresets(user.id), meta.label)
           writeLabelPresets(user.id, next)
           setLabelPresets(next)
+        }
+        if (meta.courseLabel) {
+          const next = mergeCourseLabels(readCourseLabels(user.id), meta.courseLabel)
+          writeCourseLabels(user.id, next)
+          setCourseLabels(next)
         }
       } catch {
         await deleteResourceBlob(user.id, id)
@@ -135,6 +155,39 @@ export function ResourcesProvider({ children }) {
       const next = mergeLabelPresets(readLabelPresets(user.id), t)
       writeLabelPresets(user.id, next)
       setLabelPresets(next)
+      return { ok: true, label: t }
+    },
+    [user],
+  )
+
+  const updateResourceCourseLabel = useCallback(
+    (id, courseLabel) => {
+      if (!user?.id) return
+      const trimmed = typeof courseLabel === 'string' ? courseLabel.trim() : ''
+      const nextCourseLabel = trimmed.length > 0 ? trimmed.slice(0, 120) : null
+      const list = readResourcesMetaSnapshot(user.id)
+      persistSorted(list.map((r) => (r.id === id ? { ...r, courseLabel: nextCourseLabel } : r)))
+      if (nextCourseLabel) {
+        const next = mergeCourseLabels(readCourseLabels(user.id), nextCourseLabel)
+        writeCourseLabels(user.id, next)
+        setCourseLabels(next)
+      }
+    },
+    [persistSorted, user],
+  )
+
+  /**
+   * Add a reusable course label for dropdowns (deduped, sorted).
+   * @returns {{ ok: true, label: string } | { ok: false, error: string }}
+   */
+  const addCourseLabelPreset = useCallback(
+    (raw) => {
+      if (!user?.id) return { ok: false, error: 'You must be signed in.' }
+      const t = typeof raw === 'string' ? raw.trim().slice(0, 120) : ''
+      if (!t) return { ok: false, error: 'Enter a course name.' }
+      const next = mergeCourseLabels(readCourseLabels(user.id), t)
+      writeCourseLabels(user.id, next)
+      setCourseLabels(next)
       return { ok: true, label: t }
     },
     [user],
@@ -204,9 +257,12 @@ export function ResourcesProvider({ children }) {
     () => ({
       resources,
       labelPresets,
+      courseLabels,
       addResource,
       addLabelPreset,
+      addCourseLabelPreset,
       updateResourceLabel,
+      updateResourceCourseLabel,
       removeResource,
       downloadResource,
       getResourceFile,
@@ -215,9 +271,12 @@ export function ResourcesProvider({ children }) {
     [
       resources,
       labelPresets,
+      courseLabels,
       addResource,
       addLabelPreset,
+      addCourseLabelPreset,
       updateResourceLabel,
+      updateResourceCourseLabel,
       removeResource,
       downloadResource,
       getResourceFile,

@@ -19,43 +19,43 @@ import Settings from './pages/Settings'
 export default function App() {
   return (
     <AuthProvider>
-      <ResourcesProvider>
-        <StudySessionsProvider>
-        <CoursesProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route
-                path="/onboarding"
-                element={
-                  <ProtectedRoute>
-                    <Onboarding />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/"
-                element={
-                  <ProtectedRoute>
-                    <Layout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="schedule" element={<Schedule />} />
-                <Route path="tasks" element={<Tasks />} />
-                <Route path="resources" element={<Resources />} />
-                <Route path="analytics" element={<Analytics />} />
-                <Route path="ai-assistant" element={<AIAssistant />} />
-                <Route path="settings" element={<Settings />} />
-              </Route>
-            </Routes>
-          </BrowserRouter>
-        </CoursesProvider>
-        </StudySessionsProvider>
-      </ResourcesProvider>
+      <CoursesProvider>
+        <ResourcesProvider>
+          <StudySessionsProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route
+                  path="/onboarding"
+                  element={
+                    <ProtectedRoute>
+                      <Onboarding />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <Layout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<Navigate to="/dashboard" replace />} />
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="schedule" element={<Schedule />} />
+                  <Route path="tasks" element={<Tasks />} />
+                  <Route path="resources" element={<Resources />} />
+                  <Route path="analytics" element={<Analytics />} />
+                  <Route path="ai-assistant" element={<AIAssistant />} />
+                  <Route path="settings" element={<Settings />} />
+                </Route>
+              </Routes>
+            </BrowserRouter>
+          </StudySessionsProvider>
+        </ResourcesProvider>
+      </CoursesProvider>
     </AuthProvider>
   )
 }
