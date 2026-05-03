@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import ChatMarkdown from '../components/ChatMarkdown'
 import { useResources } from '../context/ResourcesContext'
+import { useCourses } from '../context/CoursesContext'
+import { useAuth } from '../context/AuthContext'
 import { sendChat } from '../api/chat'
 import { ACCEPT_PDF_DOCX, extractDocumentText, validateChatFile } from '../lib/documentExtract'
+import { getResourceBlob } from '../lib/resourceBlobStore'
 import '../App.css'
 import styles from './AIAssistant.module.css'
 
@@ -13,19 +16,92 @@ const features = [
 ]
 
 const TRY_PROMPTS = {
-  'Study Schedule Generator': 'Create a 5-day study schedule for an upcoming exam. I can study about 2 hours on weekdays and 4 hours on weekends.',
+  'Study Schedule Generator': 'Based on my courses and upcoming assignments, create a study schedule for this week. I can study about 2 hours on weekdays and 4 hours on weekends.',
   'Document Summarizer': 'Summarize the main ideas I should memorize for an exam, as bullet points with one-line explanations.',
-  'Resource Recommender': 'Recommend free online resources (videos or articles) to learn calculus derivatives, with a one-line note for each.',
+  'Resource Recommender': 'Based on my courses, recommend free online resources (videos or articles) for each subject, with a one-line note for each.',
 }
 
 const MAX_ATTACHMENTS = 4
+
+const MAX_RESOURCE_CONTEXT_CHARS = 18000
+const PER_RESOURCE_CHARS = 3500
+
+function buildStudentContext(courses, resourceTexts) {
+  const lines = []
+
+  if (courses.length) {
+    lines.push('The student is enrolled in the following courses:')
+
+    for (const course of courses) {
+      const days = (course.schedule || [])
+        .map((s) => {
+          const time = s.startTime
+            ? ` ${s.startTime}${s.endTime ? '–' + s.endTime : ''}`
+            : ''
+          return s.day + time
+        })
+        .join(', ')
+
+      lines.push(
+        `\n**${course.name}**${course.instructor ? ` (${course.instructor})` : ''}${days ? ' — meets ' + days : ''}`,
+      )
+
+      const tasks = course.tasks || []
+      const pending = tasks
+        .filter((t) => t.status !== 'completed')
+        .sort((a, b) => {
+          if (!a.dueDate && !b.dueDate) return 0
+          if (!a.dueDate) return 1
+          if (!b.dueDate) return -1
+          return a.dueDate.localeCompare(b.dueDate)
+        })
+      const done = tasks.filter((t) => t.status === 'completed')
+
+      if (pending.length) {
+        lines.push('  Pending assignments:')
+        for (const t of pending) {
+          const due = t.dueDate
+            ? ` — due ${t.dueDate}${t.dueTime ? ' at ' + t.dueTime : ''}`
+            : ''
+          const desc = t.description ? ` (${t.description.slice(0, 80)})` : ''
+          lines.push(`  - [${t.type || 'assignment'}] ${t.title}${due}${desc}`)
+        }
+      }
+      if (done.length) {
+        lines.push(`  Completed: ${done.map((t) => t.title).join(', ')}`)
+      }
+      if (!tasks.length) {
+        lines.push('  No assignments yet.')
+      }
+    }
+  }
+
+  if (resourceTexts && resourceTexts.size > 0) {
+    lines.push('\n\n---\n\nThe student has uploaded the following study documents (use these to answer questions about their coursework):')
+    let totalChars = 0
+    for (const { name, text } of resourceTexts.values()) {
+      if (totalChars >= MAX_RESOURCE_CONTEXT_CHARS) {
+        lines.push('\n[Additional documents omitted — student can attach them directly to a message]')
+        break
+      }
+      const snippet = text.slice(0, PER_RESOURCE_CHARS)
+      lines.push(`\n[Document: ${name}]\n${snippet}${text.length > PER_RESOURCE_CHARS ? '\n[…truncated]' : ''}`)
+      totalChars += snippet.length
+    }
+  }
+
+  return lines.join('\n')
+}
 
 function newId() {
   return crypto.randomUUID()
 }
 
 export default function AIAssistant() {
+  const { user } = useAuth()
   const { resources, addResource, getResourceFile } = useResources()
+  const { courses } = useCourses()
+  const [resourceTexts, setResourceTexts] = useState(new Map())
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
@@ -42,6 +118,57 @@ export default function AIAssistant() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+
+    async function extractAll() {
+      const next = new Map()
+
+      // Saved resources (Resources page)
+      for (const r of resources) {
+        if (cancelled) return
+        try {
+          const result = await getResourceFile(r.id)
+          if (!result.ok) continue
+          const { name, text } = await extractDocumentText(result.file)
+          next.set(r.id, { name, text })
+        } catch { /* skip unreadable */ }
+      }
+
+      // Course materials and task materials
+      for (const course of courses) {
+        for (const m of (course.materials || [])) {
+          if (cancelled) return
+          try {
+            const buf = await getResourceBlob(user.id, m.id)
+            if (!buf) continue
+            const file = new File([buf], m.name, { type: m.type || 'application/octet-stream' })
+            const { name, text } = await extractDocumentText(file)
+            next.set(m.id, { name, text })
+          } catch { /* skip unreadable */ }
+        }
+        for (const task of (course.tasks || [])) {
+          for (const m of (task.materials || [])) {
+            if (cancelled) return
+            try {
+              const buf = await getResourceBlob(user.id, m.id)
+              if (!buf) continue
+              const file = new File([buf], m.name, { type: m.type || 'application/octet-stream' })
+              const { name, text } = await extractDocumentText(file)
+              next.set(m.id, { name, text })
+            } catch { /* skip unreadable */ }
+          }
+        }
+      }
+
+      if (!cancelled) setResourceTexts(next)
+    }
+
+    extractAll()
+    return () => { cancelled = true }
+  }, [resources, courses, user?.id])
 
   async function handleSend() {
     const question = input.trim()
@@ -68,7 +195,7 @@ export default function AIAssistant() {
     setLoading(true)
 
     try {
-      const reply = await sendChat(next)
+      const reply = await sendChat(next, buildStudentContext(courses, resourceTexts))
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')

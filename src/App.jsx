@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { CoursesProvider } from './context/CoursesContext'
 import { ResourcesProvider } from './context/ResourcesContext'
+import { StudySessionsProvider } from './context/StudySessionsContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Layout from './components/Layout'
 import Login from './pages/Login'
@@ -19,6 +20,7 @@ export default function App() {
   return (
     <AuthProvider>
       <ResourcesProvider>
+        <StudySessionsProvider>
         <CoursesProvider>
           <BrowserRouter>
             <Routes>
@@ -52,6 +54,7 @@ export default function App() {
             </Routes>
           </BrowserRouter>
         </CoursesProvider>
+        </StudySessionsProvider>
       </ResourcesProvider>
     </AuthProvider>
   )

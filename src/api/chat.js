@@ -31,15 +31,18 @@ export function messageToApiPayload(m) {
 
 /**
  * @param {ChatMessage[]} messages
+ * @param {string} [context]
  * @returns {Promise<string>}
  */
-export async function sendChat(messages) {
+export async function sendChat(messages, context = '') {
   const apiMessages = messages.map(messageToApiPayload)
+  const body = { messages: apiMessages }
+  if (context) body.context = context
 
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages: apiMessages }),
+    body: JSON.stringify(body),
   })
 
   let data = {}

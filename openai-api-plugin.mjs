@@ -69,6 +69,12 @@ async function handleChat(req, res, apiKey, defaultModel) {
 
   const model = typeof body.model === 'string' && body.model ? body.model : defaultModel
 
+  const contextSection =
+    typeof body.context === 'string' && body.context.trim()
+      ? `\n\n---\n\nStudent profile:\n${body.context.trim().slice(0, 30000)}`
+      : ''
+  const systemContent = SYSTEM_PROMPT + contextSection
+
   const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -77,7 +83,7 @@ async function handleChat(req, res, apiKey, defaultModel) {
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...clientMessages],
+      messages: [{ role: 'system', content: systemContent }, ...clientMessages],
     }),
   })
 
