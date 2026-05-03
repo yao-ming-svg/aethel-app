@@ -40,27 +40,35 @@ export default function Resources() {
   const {
     resources,
     labelPresets,
+    courseLabels,
     addResource,
     addLabelPreset,
+    addCourseLabelPreset,
     updateResourceLabel,
+    updateResourceCourseLabel,
     removeResource,
     downloadResource,
   } = useResources()
 
   const [filterId, setFilterId] = useState('all')
+  const [filterCourseId, setFilterCourseId] = useState('all')
   const [searchDraft, setSearchDraft] = useState('')
   const [searchKeyword, setSearchKeyword] = useState('')
 
   const [showAdd, setShowAdd] = useState(false)
   const [addSelect, setAddSelect] = useState('')
+  const [addCourseSelect, setAddCourseSelect] = useState('')
   const [addNewDraft, setAddNewDraft] = useState('')
+  const [addNewCourseDraft, setAddNewCourseDraft] = useState('')
   const [addFile, setAddFile] = useState(null)
   const [addBusy, setAddBusy] = useState(false)
   const [banner, setBanner] = useState(null)
 
   const [editingId, setEditingId] = useState(null)
   const [editSelect, setEditSelect] = useState('')
+  const [editCourseSelect, setEditCourseSelect] = useState('')
   const [editNewDraft, setEditNewDraft] = useState('')
+  const [editNewCourseDraft, setEditNewCourseDraft] = useState('')
 
   const addFileRef = useRef(null)
 
@@ -70,12 +78,18 @@ export default function Resources() {
     return resources.filter((r) => r.label === filterId)
   }, [resources, filterId])
 
+  const courseFiltered = useMemo(() => {
+    if (filterCourseId === 'all') return labelFiltered
+    if (filterCourseId === 'none') return labelFiltered.filter((r) => !r.courseLabel)
+    return labelFiltered.filter((r) => r.courseLabel === filterCourseId)
+  }, [labelFiltered, filterCourseId])
+
   const searchLower = searchKeyword.trim().toLowerCase()
 
   const visibleResources = useMemo(() => {
-    if (!searchLower) return labelFiltered
-    return labelFiltered.filter((r) => resourceMatchesKeyword(r, searchLower))
-  }, [labelFiltered, searchLower])
+    if (!searchLower) return courseFiltered
+    return courseFiltered.filter((r) => resourceMatchesKeyword(r, searchLower))
+  }, [courseFiltered, searchLower])
 
   function applySearch(e) {
     e?.preventDefault()
@@ -89,7 +103,9 @@ export default function Resources() {
 
   function openAdd() {
     setAddSelect('')
+    setAddCourseSelect('')
     setAddNewDraft('')
+    setAddNewCourseDraft('')
     setAddFile(null)
     setBanner(null)
     setShowAdd(true)
@@ -118,11 +134,27 @@ export default function Resources() {
       resolvedLabel = addSelect
     }
 
+    let resolvedCourseLabel = null
+    if (addCourseSelect === '__create__') {
+      const t = addNewCourseDraft.trim()
+      if (t) {
+        const added = addCourseLabelPreset(t)
+        if (!added.ok) {
+          setBanner({ type: 'error', text: added.error || 'Could not add course label.' })
+          return
+        }
+        resolvedCourseLabel = added.label
+      }
+    } else if (addCourseSelect) {
+      resolvedCourseLabel = addCourseSelect
+    }
+
     setAddBusy(true)
     setBanner(null)
     const result = await addResource({
       file: addFile,
       label: resolvedLabel,
+      courseLabel: resolvedCourseLabel,
     })
     setAddBusy(false)
     if (!result.ok) {
@@ -132,7 +164,9 @@ export default function Resources() {
     setShowAdd(false)
     setAddFile(null)
     setAddSelect('')
+    setAddCourseSelect('')
     setAddNewDraft('')
+    setAddNewCourseDraft('')
     if (addFileRef.current) addFileRef.current.value = ''
     setBanner({ type: 'success', text: 'Resource saved.' })
     setTimeout(() => setBanner(null), 4000)
@@ -141,7 +175,9 @@ export default function Resources() {
   function startEdit(r) {
     setEditingId(r.id)
     setEditSelect(r.label ?? '')
+    setEditCourseSelect(r.courseLabel ?? '')
     setEditNewDraft('')
+    setEditNewCourseDraft('')
   }
 
   function saveEdit() {
@@ -165,7 +201,26 @@ export default function Resources() {
       next = editSelect
     }
 
+    let nextCourse = null
+    if (editCourseSelect === '__create__') {
+      const t = editNewCourseDraft.trim()
+      if (!t) {
+        setBanner({ type: 'error', text: 'Enter a course name or choose No course.' })
+        setTimeout(() => setBanner(null), 5000)
+        return
+      }
+      const added = addCourseLabelPreset(t)
+      if (!added.ok) {
+        setBanner({ type: 'error', text: added.error || 'Could not add course label.' })
+        return
+      }
+      nextCourse = added.label
+    } else if (editCourseSelect) {
+      nextCourse = editCourseSelect
+    }
+
     updateResourceLabel(editingId, next)
+    updateResourceCourseLabel(editingId, nextCourse)
     setEditingId(null)
     setBanner(null)
   }
@@ -295,6 +350,60 @@ export default function Resources() {
                   </div>
                 )}
               </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="resource-course-select">
+                  Course <span className={styles.optional}>(optional)</span>
+                </label>
+                <select
+                  id="resource-course-select"
+                  className={styles.selectInput}
+                  value={addCourseSelect}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setAddCourseSelect(v)
+                    if (v !== '__create__') setAddNewCourseDraft('')
+                  }}
+                  disabled={addBusy}
+                >
+                  <option value="">No course</option>
+                  {courseLabels.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                  <option value="__create__">+ Add new course…</option>
+                </select>
+                {addCourseSelect === '__create__' && (
+                  <div className={styles.newLabelRow}>
+                    <input
+                      className={styles.textInput}
+                      type="text"
+                      placeholder="New course name"
+                      value={addNewCourseDraft}
+                      onChange={(e) => setAddNewCourseDraft(e.target.value)}
+                      disabled={addBusy}
+                      maxLength={120}
+                      aria-label="New course name"
+                    />
+                    <button
+                      type="button"
+                      className={`btn btn-outline ${styles.btnSm}`}
+                      disabled={addBusy || !addNewCourseDraft.trim()}
+                      onClick={() => {
+                        const r = addCourseLabelPreset(addNewCourseDraft)
+                        if (r.ok) {
+                          setAddCourseSelect(r.label)
+                          setAddNewCourseDraft('')
+                        } else {
+                          setBanner({ type: 'error', text: r.error || 'Invalid course.' })
+                        }
+                      }}
+                    >
+                      Save course
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className={styles.modalActions}>
                 <button type="button" className="btn btn-outline" disabled={addBusy} onClick={() => setShowAdd(false)}>
                   Cancel
@@ -358,6 +467,34 @@ export default function Resources() {
         ))}
       </div>
 
+      <div className={styles.filterRow} style={{ marginTop: 12 }}>
+        <span style={{ fontWeight: 600, marginRight: 8, display: 'inline-block' }}>Courses:</span>
+        <button
+          type="button"
+          className={`${styles.filterBtn} ${filterCourseId === 'all' ? styles.filterActive : ''}`}
+          onClick={() => setFilterCourseId('all')}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          className={`${styles.filterBtn} ${filterCourseId === 'none' ? styles.filterActive : ''}`}
+          onClick={() => setFilterCourseId('none')}
+        >
+          No course
+        </button>
+        {courseLabels.map((label) => (
+          <button
+            key={label}
+            type="button"
+            className={`${styles.filterBtn} ${filterCourseId === label ? styles.filterActive : ''}`}
+            onClick={() => setFilterCourseId(label)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="card" style={{ marginTop: 16 }}>
         <h2 className={styles.sectionTitle}>AI-Recommended Resources</h2>
         <div className="placeholder-block" style={{ marginTop: 12 }}>
@@ -379,6 +516,10 @@ export default function Resources() {
           <div className="placeholder-block" style={{ marginTop: 12 }}>
             <p>No resources match this label filter.</p>
           </div>
+        ) : courseFiltered.length === 0 ? (
+          <div className="placeholder-block" style={{ marginTop: 12 }}>
+            <p>No resources match this course filter.</p>
+          </div>
         ) : visibleResources.length === 0 ? (
           <div className="placeholder-block" style={{ marginTop: 12 }}>
             <p>
@@ -396,6 +537,7 @@ export default function Resources() {
                 <tr>
                   <th>File</th>
                   <th>Label</th>
+                  <th>Course</th>
                   <th>Type</th>
                   <th>Added</th>
                   <th />
@@ -474,6 +616,80 @@ export default function Resources() {
                         <div className={styles.labelRow}>
                           <span className={r.label ? styles.labelText : styles.labelNone}>
                             {r.label || 'No label'}
+                          </span>
+                          <button type="button" className={`btn btn-outline ${styles.btnSm}`} onClick={() => startEdit(r)}>
+                            Edit
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className={styles.cellLabel}>
+                      {editingId === r.id ? (
+                        <div className={styles.editCol}>
+                          <select
+                            className={styles.selectInput}
+                            value={editCourseSelect}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setEditCourseSelect(v)
+                              if (v !== '__create__') setEditNewCourseDraft('')
+                            }}
+                            aria-label="Choose course"
+                          >
+                            <option value="">No course</option>
+                            {labelOptionsFor(courseLabels, r.courseLabel || undefined).map((l) => (
+                              <option key={l} value={l}>
+                                {l}
+                              </option>
+                            ))}
+                            <option value="__create__">+ Add new course…</option>
+                          </select>
+                          {editCourseSelect === '__create__' && (
+                            <div className={styles.newLabelRow}>
+                              <input
+                                className={styles.textInput}
+                                type="text"
+                                placeholder="New course name"
+                                value={editNewCourseDraft}
+                                onChange={(e) => setEditNewCourseDraft(e.target.value)}
+                                maxLength={120}
+                                aria-label="New course name"
+                              />
+                              <button
+                                type="button"
+                                className={`btn btn-outline ${styles.btnSm}`}
+                                disabled={!editNewCourseDraft.trim()}
+                                onClick={() => {
+                                  const res = addCourseLabelPreset(editNewCourseDraft)
+                                  if (res.ok) {
+                                    setEditCourseSelect(res.label)
+                                    setEditNewCourseDraft('')
+                                  } else {
+                                    setBanner({ type: 'error', text: res.error || 'Invalid course.' })
+                                  }
+                                }}
+                              >
+                                Save course
+                              </button>
+                            </div>
+                          )}
+                          <div className={styles.editActions}>
+                            <button type="button" className={`btn btn-primary ${styles.btnSm}`} onClick={saveEdit}>
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-outline ${styles.btnSm}`}
+                              onClick={() => setEditingId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={styles.labelRow}>
+                          <span className={r.courseLabel ? styles.labelText : styles.labelNone}>
+                            {r.courseLabel || 'No course'}
                           </span>
                           <button type="button" className={`btn btn-outline ${styles.btnSm}`} onClick={() => startEdit(r)}>
                             Edit

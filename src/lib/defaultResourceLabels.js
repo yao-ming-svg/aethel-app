@@ -8,6 +8,9 @@ export const DEFAULT_RESOURCE_LABELS = [
   'Notes',
 ]
 
+/** Default course labels (merged with user's actual courses). */
+export const DEFAULT_COURSE_LABELS = []
+
 /**
  * @param {string[]} storedFromDisk labels saved for this user (may omit defaults)
  * @param {...unknown} extras extra strings or arrays of strings (e.g. from files)
@@ -20,6 +23,22 @@ export function mergeLabelPresets(storedFromDisk, ...extras) {
     .map((x) => x.trim().slice(0, 120))
   const list = Array.isArray(storedFromDisk) ? storedFromDisk : []
   return [...new Set([...DEFAULT_RESOURCE_LABELS, ...list, ...more])].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  )
+}
+
+/**
+ * @param {string[]} storedFromDisk course labels saved for this user
+ * @param {...unknown} extras extra strings or arrays of strings (e.g. from actual courses)
+ * @returns {string[]} deduped, sorted
+ */
+export function mergeCourseLabels(storedFromDisk, ...extras) {
+  const more = extras
+    .flat()
+    .filter((x) => typeof x === 'string' && x.trim().length > 0)
+    .map((x) => x.trim().slice(0, 120))
+  const list = Array.isArray(storedFromDisk) ? storedFromDisk : []
+  return [...new Set([...DEFAULT_COURSE_LABELS, ...list, ...more])].sort((a, b) =>
     a.localeCompare(b, undefined, { sensitivity: 'base' }),
   )
 }
