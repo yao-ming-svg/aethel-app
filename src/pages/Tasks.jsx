@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useCourses } from '../context/CoursesContext'
 import CourseModal from '../components/CourseModal'
-import TaskModal, { TASK_TYPES, TASK_STATUSES } from '../components/TaskModal'
+import TaskModal from '../components/TaskModal'
+import { TASK_TYPES, TASK_STATUSES } from '../lib/taskMetadata'
 import '../App.css'
 import styles from './Tasks.module.css'
 

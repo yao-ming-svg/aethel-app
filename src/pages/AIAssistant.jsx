@@ -35,6 +35,74 @@ const MAX_ATTACHMENTS = 4
 
 const MAX_RESOURCE_CONTEXT_CHARS = 18000
 const PER_RESOURCE_CHARS = 3500
+const CHAT_SESSION_VERSION = 1
+
+function chatSessionScope(userId) {
+  return userId || 'guest'
+}
+
+function chatSessionKey(scope) {
+  return `aethel_ai_chat_session_${scope}`
+}
+
+function attachmentNamesFromMessage(message) {
+  if (Array.isArray(message?.attachments)) {
+    return message.attachments.map((attachment) => attachment?.name).filter(Boolean)
+  }
+
+  if (Array.isArray(message?.documentBlocks)) {
+    return message.documentBlocks.map((block) => block?.name).filter(Boolean)
+  }
+
+  return []
+}
+
+function sessionSafeMessage(message) {
+  const role = message?.role === 'assistant' ? 'assistant' : 'user'
+  const content = typeof message?.content === 'string' ? message.content : ''
+  const attachmentNames = attachmentNamesFromMessage(message)
+
+  return {
+    role,
+    content,
+    ...(attachmentNames.length ? { attachments: attachmentNames.map((name) => ({ name })) } : {}),
+  }
+}
+
+function sessionSafeMessages(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((message) => message?.role === 'user' || message?.role === 'assistant')
+    .map(sessionSafeMessage)
+}
+
+function readSessionMessages(scope) {
+  try {
+    const raw = sessionStorage.getItem(chatSessionKey(scope))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    const messages = Array.isArray(parsed) ? parsed : parsed?.messages
+    return sessionSafeMessages(messages)
+  } catch {
+    return []
+  }
+}
+
+function writeSessionMessages(scope, messages) {
+  try {
+    const safeMessages = sessionSafeMessages(messages)
+    if (safeMessages.length === 0) {
+      sessionStorage.removeItem(chatSessionKey(scope))
+      return
+    }
+
+    sessionStorage.setItem(
+      chatSessionKey(scope),
+      JSON.stringify({ version: CHAT_SESSION_VERSION, messages: safeMessages }),
+    )
+  } catch {
+    /* Session history is best-effort only. */
+  }
+}
 
 function buildStudentContext(courses, resourceTexts) {
   const lines = []
@@ -115,9 +183,11 @@ export default function AIAssistant() {
   const { user } = useAuth()
   const { resources, labelPresets, courseLabels, addResource, getResourceFile, addFlashcardSet } = useResources()
   const { courses } = useCourses()
+  const sessionScope = chatSessionScope(user?.id)
   const [resourceTexts, setResourceTexts] = useState(new Map())
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([])
+  const [messagesLoadedFor, setMessagesLoadedFor] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [pendingAttachments, setPendingAttachments] = useState([])
@@ -128,13 +198,29 @@ export default function AIAssistant() {
   const [attachingResourceId, setAttachingResourceId] = useState(null)
   const [flashcardMode, setFlashcardMode] = useState(false)
   const [notice, setNotice] = useState(null)
-  const endRef = useRef(null)
+  const messageListRef = useRef(null)
   const fileInputRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const list = messageListRef.current
+    if (!list) return
+    list.scrollTop = list.scrollHeight
   }, [messages, loading])
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      setMessages(readSessionMessages(sessionScope))
+      setMessagesLoadedFor(sessionScope)
+    })
+
+    return () => cancelAnimationFrame(id)
+  }, [sessionScope])
+
+  useEffect(() => {
+    if (messagesLoadedFor !== sessionScope) return
+    writeSessionMessages(sessionScope, messages)
+  }, [messages, messagesLoadedFor, sessionScope])
 
   useEffect(() => {
     const textarea = inputRef.current
@@ -463,8 +549,10 @@ export default function AIAssistant() {
               </p>
             </div>
           ) : (
-            <ul className={styles.messageList}>
-              {messages.map((m, i) => (
+            <ul ref={messageListRef} className={styles.messageList}>
+              {messages.map((m, i) => {
+                const attachments = attachmentNamesFromMessage(m).map((name) => ({ name }))
+                return (
                 <li
                   key={`${i}-${m.role}`}
                   className={m.role === 'user' ? styles.msgUser : styles.msgAssistant}
@@ -475,9 +563,9 @@ export default function AIAssistant() {
                       <ChatMarkdown>{m.content}</ChatMarkdown>
                     ) : (
                       <>
-                        {m.documentBlocks?.length > 0 && (
+                        {attachments.length > 0 && (
                           <div className={styles.attachmentTags}>
-                            {m.documentBlocks.map((d, di) => (
+                            {attachments.map((d, di) => (
                               <span key={`${di}-${d.name}`} className={styles.attachmentTag} title={d.name}>
                                 📄 {d.name}
                               </span>
@@ -486,14 +574,15 @@ export default function AIAssistant() {
                         )}
                         {m.content ? (
                           <span className={styles.userPlain}>{m.content}</span>
-                        ) : m.documentBlocks?.length ? (
+                        ) : attachments.length ? (
                           <span className={styles.userPlainMuted}>(Attached documents only)</span>
                         ) : null}
                       </>
                     )}
                   </div>
                 </li>
-              ))}
+                )
+              })}
               {loading && (
                 <li className={styles.msgAssistant}>
                   <span className={styles.msgLabel}>Aethel</span>
@@ -506,7 +595,7 @@ export default function AIAssistant() {
                   </div>
                 </li>
               )}
-              <li ref={endRef} aria-hidden className={styles.scrollAnchor} />
+              <li aria-hidden className={styles.scrollAnchor} />
             </ul>
           )}
         </div>
