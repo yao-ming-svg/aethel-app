@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { useResources } from '../context/ResourcesContext'
 import { ACCEPT_PDF_DOCX, validateChatFile } from '../lib/documentExtract'
+import DocumentViewer from '../components/DocumentViewer'
 import '../App.css'
 import styles from './Resources.module.css'
 
@@ -70,7 +71,23 @@ export default function Resources() {
   const [editNewDraft, setEditNewDraft] = useState('')
   const [editNewCourseDraft, setEditNewCourseDraft] = useState('')
 
+  const [viewingResourceId, setViewingResourceId] = useState(null)
+
   const addFileRef = useRef(null)
+
+  // Handle keyboard shortcuts for document viewer
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === 'Escape' && viewingResourceId) {
+        setViewingResourceId(null)
+      }
+    }
+
+    if (viewingResourceId) {
+      document.addEventListener('keydown', handleKeyDown)
+      return () => document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [viewingResourceId])
 
   const labelFiltered = useMemo(() => {
     if (filterId === 'all') return resources
@@ -703,6 +720,14 @@ export default function Resources() {
                       <button
                         type="button"
                         className={`btn btn-outline ${styles.btnSm}`}
+                        onClick={() => setViewingResourceId(r.id)}
+                        title="View document"
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-outline ${styles.btnSm}`}
                         onClick={() => onDownload(r.id)}
                       >
                         Download
@@ -722,6 +747,13 @@ export default function Resources() {
           </div>
         )}
       </div>
+
+      {viewingResourceId && (
+        <DocumentViewer
+          resource={resources.find((r) => r.id === viewingResourceId)}
+          onClose={() => setViewingResourceId(null)}
+        />
+      )}
     </div>
   )
 }
