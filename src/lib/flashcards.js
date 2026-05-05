@@ -132,7 +132,7 @@ Create a study flashcard set from the provided document content. Return only val
 {"cards":[{"front":"question or term","answer":"answer or explanation"}]}
 
 Rules:
-- Include 8 to 20 cards when enough source material is available.
+- Include 8 to 20+ cards when enough source material is available.
 - Keep each front concise and each answer clear.
 - Do not include markdown, code fences, commentary, or any text outside the JSON object.
 - If the source has very little content, create as many useful cards as the content supports.`

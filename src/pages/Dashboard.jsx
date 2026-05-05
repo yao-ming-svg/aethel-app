@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useCourses } from '../context/CoursesContext'
 import CourseModal from '../components/CourseModal'
 import StudyTimer from '../components/StudyTimer'
-import { TASK_TYPES } from '../components/TaskModal'
+import { TASK_TYPES } from '../lib/taskMetadata'
 import '../App.css'
 import styles from './Dashboard.module.css'
 

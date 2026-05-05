@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useCourses } from '../context/CoursesContext'
-import { TASK_TYPES } from '../components/TaskModal'
+import { TASK_TYPES } from '../lib/taskMetadata'
 import '../App.css'
 import styles from './Schedule.module.css'
 
