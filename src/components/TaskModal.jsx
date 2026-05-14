@@ -2,22 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useResources } from '../context/ResourcesContext'
 import { saveResourceBlob, deleteResourceBlob } from '../lib/resourceBlobStore'
+import { TASK_TYPES, TASK_STATUSES } from '../lib/taskMetadata'
 import styles from './TaskModal.module.css'
-
-export const TASK_TYPES = [
-  { value: 'homework',  label: 'Homework',   color: '#4f46e5' },
-  { value: 'exam',      label: 'Exam',        color: '#ef4444' },
-  { value: 'quiz',      label: 'Quiz',        color: '#f59e0b' },
-  { value: 'lab',       label: 'Lab',         color: '#10b981' },
-  { value: 'project',   label: 'Project',     color: '#8b5cf6' },
-  { value: 'reading',   label: 'Reading',     color: '#14b8a6' },
-  { value: 'other',     label: 'Other',       color: '#64748b' },
-]
-
-export const TASK_STATUSES = [
-  { value: 'todo',      label: 'To Do' },
-  { value: 'completed', label: 'Completed' },
-]
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`
@@ -66,8 +52,8 @@ export default function TaskModal({ initial, courseName, courseColor, onSave, on
     const incoming = await Promise.all(
       Array.from(fileList).map(async (f) => {
         const id = crypto.randomUUID()
-        const label = courseName || 'Task Material'
-        const result = await addResource({ file: f, label, id })
+        const courseLabel = courseName || null
+        const result = await addResource({ file: f, label: 'Task Material', courseLabel, id })
         if (!result.ok && user?.id) {
           // Not a PDF/DOCX — save blob only, skip Resources tab
           try { await saveResourceBlob(user.id, id, await f.arrayBuffer()) } catch { /* ignore */ }
@@ -91,8 +77,6 @@ export default function TaskModal({ initial, courseName, courseColor, onSave, on
     }
     onSave({ ...task, title: task.title.trim() })
   }
-
-  const selectedType = TASK_TYPES.find((t) => t.value === task.type) ?? TASK_TYPES[0]
 
   return (
     <div className={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>

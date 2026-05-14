@@ -4,7 +4,7 @@ import { useResources } from '../context/ResourcesContext'
 import { saveResourceBlob, deleteResourceBlob } from '../lib/resourceBlobStore'
 import styles from './CourseModal.module.css'
 
-export const COLORS = [
+const COLORS = [
   '#4f46e5', '#0ea5e9', '#10b981', '#f59e0b',
   '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6',
 ]
@@ -72,8 +72,8 @@ export default function CourseModal({ initial, onSave, onClose }) {
     const incoming = await Promise.all(
       Array.from(fileList).map(async (f) => {
         const id = crypto.randomUUID()
-        const label = course.name.trim() || 'Course Material'
-        const result = await addResource({ file: f, label, id })
+        const courseLabel = course.name.trim() || null
+        const result = await addResource({ file: f, label: 'Course Material', courseLabel, id })
         if (!result.ok && user?.id) {
           // Not a PDF/DOCX — save blob only, skip Resources tab
           try { await saveResourceBlob(user.id, id, await f.arrayBuffer()) } catch { /* ignore */ }

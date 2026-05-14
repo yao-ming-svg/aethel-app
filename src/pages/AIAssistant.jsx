@@ -6,6 +6,14 @@ import { useAuth } from '../context/AuthContext'
 import { sendChat } from '../api/chat'
 import { ACCEPT_PDF_DOCX, extractDocumentText, validateChatFile } from '../lib/documentExtract'
 import { getResourceBlob } from '../lib/resourceBlobStore'
+import { formatResourceLabelSuggestion, suggestResourceLabelsFromFileName } from '../lib/resourceLabelSuggestions'
+import {
+  createFlashcardJsonPrompt,
+  fallbackFlashcardsFromDocuments,
+  looksLikeFlashcardRequest,
+  parseFlashcardsFromJson,
+  pickFlashcardSourceName,
+} from '../lib/flashcards'
 import '../App.css'
 import styles from './AIAssistant.module.css'
 
@@ -13,18 +21,88 @@ const features = [
   { icon: '📅', title: 'Study Schedule Generator', desc: 'Generate a personalized study schedule based on your deadlines and availability.' },
   { icon: '📄', title: 'Document Summarizer',       desc: 'Upload PDFs or notes and get concise, exam-focused summaries.' },
   { icon: '🔍', title: 'Resource Recommender',      desc: 'Get AI-curated textbooks, videos, and articles tailored to your subjects.' },
+  { icon: 'FC', title: 'Flashcard Builder',            desc: 'Create class-ready flashcards from a selected resource or attachment.' },
 ]
 
 const TRY_PROMPTS = {
   'Study Schedule Generator': 'Based on my courses and upcoming assignments, create a study schedule for this week. I can study about 2 hours on weekdays and 4 hours on weekends.',
   'Document Summarizer': 'Summarize the main ideas I should memorize for an exam, as bullet points with one-line explanations.',
   'Resource Recommender': 'Based on my courses, recommend free online resources (videos or articles) for each subject, with a one-line note for each.',
+  'Flashcard Builder': 'Create flashcards from the attached resource.',
 }
 
 const MAX_ATTACHMENTS = 4
 
 const MAX_RESOURCE_CONTEXT_CHARS = 18000
 const PER_RESOURCE_CHARS = 3500
+const CHAT_SESSION_VERSION = 1
+
+function chatSessionScope(userId) {
+  return userId || 'guest'
+}
+
+function chatSessionKey(scope) {
+  return `aethel_ai_chat_session_${scope}`
+}
+
+function attachmentNamesFromMessage(message) {
+  if (Array.isArray(message?.attachments)) {
+    return message.attachments.map((attachment) => attachment?.name).filter(Boolean)
+  }
+
+  if (Array.isArray(message?.documentBlocks)) {
+    return message.documentBlocks.map((block) => block?.name).filter(Boolean)
+  }
+
+  return []
+}
+
+function sessionSafeMessage(message) {
+  const role = message?.role === 'assistant' ? 'assistant' : 'user'
+  const content = typeof message?.content === 'string' ? message.content : ''
+  const attachmentNames = attachmentNamesFromMessage(message)
+
+  return {
+    role,
+    content,
+    ...(attachmentNames.length ? { attachments: attachmentNames.map((name) => ({ name })) } : {}),
+  }
+}
+
+function sessionSafeMessages(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((message) => message?.role === 'user' || message?.role === 'assistant')
+    .map(sessionSafeMessage)
+}
+
+function readSessionMessages(scope) {
+  try {
+    const raw = sessionStorage.getItem(chatSessionKey(scope))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    const messages = Array.isArray(parsed) ? parsed : parsed?.messages
+    return sessionSafeMessages(messages)
+  } catch {
+    return []
+  }
+}
+
+function writeSessionMessages(scope, messages) {
+  try {
+    const safeMessages = sessionSafeMessages(messages)
+    if (safeMessages.length === 0) {
+      sessionStorage.removeItem(chatSessionKey(scope))
+      return
+    }
+
+    sessionStorage.setItem(
+      chatSessionKey(scope),
+      JSON.stringify({ version: CHAT_SESSION_VERSION, messages: safeMessages }),
+    )
+  } catch {
+    /* Session history is best-effort only. */
+  }
+}
 
 function buildStudentContext(courses, resourceTexts) {
   const lines = []
@@ -97,13 +175,19 @@ function newId() {
   return crypto.randomUUID()
 }
 
+function withoutExtension(name) {
+  return String(name || 'Resource').replace(/\.[^.]+$/, '')
+}
+
 export default function AIAssistant() {
   const { user } = useAuth()
-  const { resources, addResource, getResourceFile } = useResources()
+  const { resources, labelPresets, courseLabels, addResource, getResourceFile, addFlashcardSet } = useResources()
   const { courses } = useCourses()
+  const sessionScope = chatSessionScope(user?.id)
   const [resourceTexts, setResourceTexts] = useState(new Map())
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([])
+  const [messagesLoadedFor, setMessagesLoadedFor] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [pendingAttachments, setPendingAttachments] = useState([])
@@ -112,12 +196,39 @@ export default function AIAssistant() {
   const [attachmentChoiceOpen, setAttachmentChoiceOpen] = useState(false)
   const [resourcePickerOpen, setResourcePickerOpen] = useState(false)
   const [attachingResourceId, setAttachingResourceId] = useState(null)
-  const endRef = useRef(null)
+  const [flashcardMode, setFlashcardMode] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const messageListRef = useRef(null)
   const fileInputRef = useRef(null)
+  const inputRef = useRef(null)
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const list = messageListRef.current
+    if (!list) return
+    list.scrollTop = list.scrollHeight
   }, [messages, loading])
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      setMessages(readSessionMessages(sessionScope))
+      setMessagesLoadedFor(sessionScope)
+    })
+
+    return () => cancelAnimationFrame(id)
+  }, [sessionScope])
+
+  useEffect(() => {
+    if (messagesLoadedFor !== sessionScope) return
+    writeSessionMessages(sessionScope, messages)
+  }, [messages, messagesLoadedFor, sessionScope])
+
+  useEffect(() => {
+    const textarea = inputRef.current
+    if (!textarea) return
+
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`
+  }, [input])
 
   useEffect(() => {
     if (!user?.id) return
@@ -168,15 +279,17 @@ export default function AIAssistant() {
 
     extractAll()
     return () => { cancelled = true }
-  }, [resources, courses, user?.id])
+  }, [resources, courses, getResourceFile, user?.id])
 
   async function handleSend() {
     const question = input.trim()
     if ((!question && pendingAttachments.length === 0) || loading) return
 
     setError(null)
+    setNotice(null)
     setInput('')
     const sentAttachments = pendingAttachments
+    const shouldCreateFlashcards = flashcardMode || looksLikeFlashcardRequest(question)
 
     const documentBlocks =
       sentAttachments.length > 0
@@ -191,11 +304,70 @@ export default function AIAssistant() {
 
     setPendingAttachments([])
     const next = [...messages, userMsg]
+    const modelMsg = shouldCreateFlashcards
+      ? {
+          ...userMsg,
+          content: createFlashcardJsonPrompt(question),
+        }
+      : userMsg
+    const modelMessages = [...messages, modelMsg]
     setMessages(next)
     setLoading(true)
 
     try {
-      const reply = await sendChat(next, buildStudentContext(courses, resourceTexts))
+      const reply = await sendChat(modelMessages, buildStudentContext(courses, resourceTexts))
+      if (shouldCreateFlashcards) {
+        let cards = parseFlashcardsFromJson(reply)
+        if (cards.length === 0 && documentBlocks?.length) {
+          cards = fallbackFlashcardsFromDocuments(documentBlocks)
+        }
+
+        if (cards.length > 0) {
+          const { sourceAttachment, sourceResource, sourceName } = pickFlashcardSourceName(sentAttachments, resources)
+          const setName = `${withoutExtension(sourceName)} flashcards`
+          const saved = addFlashcardSet({
+            name: setName,
+            courseLabel: sourceResource?.courseLabel || null,
+            cards,
+            sourceResourceId: sourceResource?.id || sourceAttachment?.sourceResourceId || null,
+            sourceResourceName: sourceName,
+          })
+
+          if (!saved.ok) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                content: `I created a flashcard set, but I could not save it to Resources: ${saved.error}`,
+              },
+            ])
+            return
+          }
+
+          const cardWord = cards.length === 1 ? 'card' : 'cards'
+          const sourceLine = sourceAttachment ? ` from ${sourceName}` : ''
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `Done - I created "${setName}" with ${cards.length} ${cardWord}${sourceLine}. It is ready to study in the Resources tab.`,
+            },
+          ])
+          setNotice('Flashcard set created in Resources.')
+          return
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content:
+              'I could not create a flashcard set from that response. Try attaching a specific resource and asking me to make flashcards from it.',
+          },
+        ])
+        return
+      }
+
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
@@ -212,6 +384,7 @@ export default function AIAssistant() {
   function handleTry(title) {
     const prompt = TRY_PROMPTS[title]
     if (prompt) setInput(prompt)
+    setFlashcardMode(title === 'Flashcard Builder')
   }
 
   function onKeyDown(e) {
@@ -225,9 +398,9 @@ export default function AIAssistant() {
     setPendingAttachments((list) => list.filter((a) => a.id !== id))
   }
 
-  function askSaveToResources(fileName) {
+  function askSaveToResources(fileName, suggestion) {
     return new Promise((resolve) => {
-      setResourcePrompt({ fileName, resolve })
+      setResourcePrompt({ fileName, suggestion, resolve })
     })
   }
 
@@ -312,9 +485,14 @@ export default function AIAssistant() {
         setPendingAttachments((prev) => [...prev, { id: attachmentId, name, text }])
         added += 1
 
-        const saveToResources = await askSaveToResources(name)
+        const suggestion = suggestResourceLabelsFromFileName(name, labelPresets, courseLabels)
+        const saveToResources = await askSaveToResources(name, suggestion)
         if (saveToResources) {
-          const saved = await addResource({ file, label: null })
+          const saved = await addResource({
+            file,
+            label: suggestion.label || null,
+            courseLabel: suggestion.courseLabel || null,
+          })
           if (!saved.ok) {
             setError(`Attached for chat, but could not save to Resources: ${saved.error}`)
           } else {
@@ -347,29 +525,18 @@ export default function AIAssistant() {
         <p>Your AI-powered study companion. Ask questions, get a schedule, or summarize notes.</p>
       </div>
 
-      <div className="grid-3" style={{ marginBottom: 20 }}>
-        {features.map((f) => (
-          <div key={f.title} className={`card ${styles.featureCard}`}>
-            <span className={styles.featureIcon}>{f.icon}</span>
-            <h3 className={styles.featureTitle}>{f.title}</h3>
-            <p className={styles.featureDesc}>{f.desc}</p>
-            <button
-              type="button"
-              className={`btn btn-outline ${styles.featureBtn}`}
-              onClick={() => handleTry(f.title)}
-            >
-              Try it
-            </button>
-          </div>
-        ))}
-      </div>
-
       <div className="card">
         <h2 className={styles.chatTitle}>Chat with AI</h2>
 
         {error && (
           <div className={styles.chatError} role="alert">
             {error}
+          </div>
+        )}
+
+        {notice && (
+          <div className={styles.chatNotice} role="status">
+            {notice}
           </div>
         )}
 
@@ -382,8 +549,10 @@ export default function AIAssistant() {
               </p>
             </div>
           ) : (
-            <ul className={styles.messageList}>
-              {messages.map((m, i) => (
+            <ul ref={messageListRef} className={styles.messageList}>
+              {messages.map((m, i) => {
+                const attachments = attachmentNamesFromMessage(m).map((name) => ({ name }))
+                return (
                 <li
                   key={`${i}-${m.role}`}
                   className={m.role === 'user' ? styles.msgUser : styles.msgAssistant}
@@ -394,9 +563,9 @@ export default function AIAssistant() {
                       <ChatMarkdown>{m.content}</ChatMarkdown>
                     ) : (
                       <>
-                        {m.documentBlocks?.length > 0 && (
+                        {attachments.length > 0 && (
                           <div className={styles.attachmentTags}>
-                            {m.documentBlocks.map((d, di) => (
+                            {attachments.map((d, di) => (
                               <span key={`${di}-${d.name}`} className={styles.attachmentTag} title={d.name}>
                                 📄 {d.name}
                               </span>
@@ -405,14 +574,15 @@ export default function AIAssistant() {
                         )}
                         {m.content ? (
                           <span className={styles.userPlain}>{m.content}</span>
-                        ) : m.documentBlocks?.length ? (
+                        ) : attachments.length ? (
                           <span className={styles.userPlainMuted}>(Attached documents only)</span>
                         ) : null}
                       </>
                     )}
                   </div>
                 </li>
-              ))}
+                )
+              })}
               {loading && (
                 <li className={styles.msgAssistant}>
                   <span className={styles.msgLabel}>Aethel</span>
@@ -425,7 +595,7 @@ export default function AIAssistant() {
                   </div>
                 </li>
               )}
-              <li ref={endRef} aria-hidden className={styles.scrollAnchor} />
+              <li aria-hidden className={styles.scrollAnchor} />
             </ul>
           )}
         </div>
@@ -451,6 +621,16 @@ export default function AIAssistant() {
           </div>
         )}
 
+        <label className={styles.flashcardToggle}>
+          <input
+            type="checkbox"
+            checked={flashcardMode}
+            onChange={(e) => setFlashcardMode(e.target.checked)}
+            disabled={loading || extracting}
+          />
+          <span>Create flashcards from the next message</span>
+        </label>
+
         <div className={styles.inputRow}>
           <input
             ref={fileInputRef}
@@ -474,15 +654,16 @@ export default function AIAssistant() {
                 </span>
               </div>
             )}
-            <input
+            <textarea
+              ref={inputRef}
               className={`${styles.chatInput} ${loading ? styles.chatInputBehindLoading : ''}`}
-              type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="Ask anything about your studies..."
               disabled={loading || extracting}
               autoComplete="off"
+              rows="1"
             />
           </div>
           <button
@@ -499,6 +680,29 @@ export default function AIAssistant() {
           </button>
         </div>
         <p className={styles.uploadHint}>Attachments: PDF or Word (.docx) only, up to {MAX_ATTACHMENTS} files, 15 MB each.</p>
+      </div>
+
+      <div className={styles.trySection}>
+        <div className={styles.tryHeader}>
+          <h2>Start with a template</h2>
+          <p>Use these shortcuts to fill the chat with a focused study request, then edit it before sending.</p>
+        </div>
+        <div className="grid-3">
+          {features.map((f) => (
+            <div key={f.title} className={`card ${styles.featureCard}`}>
+              <span className={styles.featureIcon}>{f.icon}</span>
+              <h3 className={styles.featureTitle}>{f.title}</h3>
+              <p className={styles.featureDesc}>{f.desc}</p>
+              <button
+                type="button"
+                className={`btn btn-outline ${styles.featureBtn}`}
+                onClick={() => handleTry(f.title)}
+              >
+                Try it
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {attachmentChoiceOpen && (
@@ -606,6 +810,11 @@ export default function AIAssistant() {
             <p className={styles.resourcePromptText}>
               {resourcePrompt.fileName} will stay attached to this chat either way.
             </p>
+            {(resourcePrompt.suggestion?.label || resourcePrompt.suggestion?.courseLabel) && (
+              <p className={styles.resourcePromptSuggestion}>
+                {formatResourceLabelSuggestion(resourcePrompt.suggestion)}
+              </p>
+            )}
             <div className={styles.resourcePromptActions}>
               <button
                 type="button"

@@ -1,6 +1,9 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { useResources } from '../context/ResourcesContext'
 import { ACCEPT_PDF_DOCX, validateChatFile } from '../lib/documentExtract'
+import { formatResourceLabelSuggestion, suggestResourceLabelsFromFileName } from '../lib/resourceLabelSuggestions'
+import DocumentViewer from '../components/DocumentViewer'
+import FlashcardSets from '../components/FlashcardSets'
 import '../App.css'
 import styles from './Resources.module.css'
 
@@ -12,10 +15,13 @@ function fileKindLabel(mime, name) {
 
 function formatAdded(iso) {
   try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''))
+    const date = dateOnly
+      ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+      : new Date(iso)
+
+    if (Number.isNaN(date.getTime())) return iso
+    return date.toLocaleDateString(undefined, { dateStyle: 'medium' })
   } catch {
     return iso
   }
@@ -40,29 +46,59 @@ export default function Resources() {
   const {
     resources,
     labelPresets,
+    courseLabels,
     addResource,
     addLabelPreset,
+    renameLabelPreset,
+    renameCourseLabelPreset,
+    removeLabelPreset,
     updateResourceLabel,
+    updateResourceCourseLabel,
     removeResource,
     downloadResource,
   } = useResources()
 
   const [filterId, setFilterId] = useState('all')
+  const [filterCourseId, setFilterCourseId] = useState('all')
   const [searchDraft, setSearchDraft] = useState('')
   const [searchKeyword, setSearchKeyword] = useState('')
 
   const [showAdd, setShowAdd] = useState(false)
   const [addSelect, setAddSelect] = useState('')
+  const [addCourseSelect, setAddCourseSelect] = useState('')
   const [addNewDraft, setAddNewDraft] = useState('')
   const [addFile, setAddFile] = useState(null)
+  const [addSuggestion, setAddSuggestion] = useState('')
+  const [addAutoFill, setAddAutoFill] = useState({ label: false, course: false })
   const [addBusy, setAddBusy] = useState(false)
   const [banner, setBanner] = useState(null)
+  const [labelManagerOpen, setLabelManagerOpen] = useState(false)
+  const [labelDrafts, setLabelDrafts] = useState({})
+  const [courseDrafts, setCourseDrafts] = useState({})
+  const [labelManagerError, setLabelManagerError] = useState('')
 
   const [editingId, setEditingId] = useState(null)
   const [editSelect, setEditSelect] = useState('')
+  const [editCourseSelect, setEditCourseSelect] = useState('')
   const [editNewDraft, setEditNewDraft] = useState('')
 
+  const [viewingResourceId, setViewingResourceId] = useState(null)
+
   const addFileRef = useRef(null)
+
+  // Handle keyboard shortcuts for document viewer
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === 'Escape' && viewingResourceId) {
+        setViewingResourceId(null)
+      }
+    }
+
+    if (viewingResourceId) {
+      document.addEventListener('keydown', handleKeyDown)
+      return () => document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [viewingResourceId])
 
   const labelFiltered = useMemo(() => {
     if (filterId === 'all') return resources
@@ -70,12 +106,27 @@ export default function Resources() {
     return resources.filter((r) => r.label === filterId)
   }, [resources, filterId])
 
+  const usedResourceLabels = useMemo(() => {
+    const set = new Set()
+    for (const resource of resources) {
+      const label = typeof resource.label === 'string' ? resource.label.trim().toLowerCase() : ''
+      if (label) set.add(label)
+    }
+    return set
+  }, [resources])
+
+  const courseFiltered = useMemo(() => {
+    if (filterCourseId === 'all') return labelFiltered
+    if (filterCourseId === 'none') return labelFiltered.filter((r) => !r.courseLabel)
+    return labelFiltered.filter((r) => r.courseLabel === filterCourseId)
+  }, [labelFiltered, filterCourseId])
+
   const searchLower = searchKeyword.trim().toLowerCase()
 
   const visibleResources = useMemo(() => {
-    if (!searchLower) return labelFiltered
-    return labelFiltered.filter((r) => resourceMatchesKeyword(r, searchLower))
-  }, [labelFiltered, searchLower])
+    if (!searchLower) return courseFiltered
+    return courseFiltered.filter((r) => resourceMatchesKeyword(r, searchLower))
+  }, [courseFiltered, searchLower])
 
   function applySearch(e) {
     e?.preventDefault()
@@ -89,11 +140,112 @@ export default function Resources() {
 
   function openAdd() {
     setAddSelect('')
+    setAddCourseSelect('')
     setAddNewDraft('')
     setAddFile(null)
+    setAddSuggestion('')
+    setAddAutoFill({ label: false, course: false })
     setBanner(null)
     setShowAdd(true)
     if (addFileRef.current) addFileRef.current.value = ''
+  }
+
+  function openLabelManager() {
+    setLabelDrafts(Object.fromEntries(labelPresets.map((label) => [label, label])))
+    setCourseDrafts(Object.fromEntries(courseLabels.map((label) => [label, label])))
+    setLabelManagerOpen(true)
+    setLabelManagerError('')
+  }
+
+  function saveManagedLabel(label) {
+    const result = renameLabelPreset(label, labelDrafts[label])
+    if (!result.ok) {
+      setLabelManagerError(result.error || 'Could not update label.')
+      return
+    }
+
+    if (filterId === label) setFilterId(result.label)
+    setLabelManagerError('')
+    setLabelDrafts((prev) => {
+      const next = { ...prev }
+      delete next[label]
+      next[result.label] = result.label
+      return next
+    })
+    setBanner({ type: 'success', text: 'Label updated.' })
+    setTimeout(() => setBanner(null), 3000)
+  }
+
+  function removeManagedLabel(label) {
+    const result = removeLabelPreset(label)
+    if (!result.ok) {
+      setLabelManagerError(result.error || 'Could not remove label.')
+      return
+    }
+
+    if (filterId === label) setFilterId('all')
+    setLabelManagerError('')
+    setLabelDrafts((prev) => {
+      const next = { ...prev }
+      delete next[label]
+      return next
+    })
+    setBanner({ type: 'success', text: 'Label removed.' })
+    setTimeout(() => setBanner(null), 3000)
+  }
+
+  function saveManagedCourse(label) {
+    const result = renameCourseLabelPreset(label, courseDrafts[label])
+    if (!result.ok) {
+      setLabelManagerError(result.error || 'Could not update course.')
+      return
+    }
+
+    if (filterCourseId === label) setFilterCourseId(result.label)
+    setLabelManagerError('')
+    setCourseDrafts((prev) => {
+      const next = { ...prev }
+      delete next[label]
+      next[result.label] = result.label
+      return next
+    })
+    setBanner({ type: 'success', text: 'Course updated.' })
+    setTimeout(() => setBanner(null), 3000)
+  }
+
+  function applyFileNameSuggestions(file) {
+    const { label: suggestedLabel, courseLabel: suggestedCourse } = suggestResourceLabelsFromFileName(
+      file.name,
+      labelPresets,
+      courseLabels,
+    )
+    const canApplyLabel = addSelect !== '__create__' && (!addSelect || addAutoFill.label)
+    const canApplyCourse = !addCourseSelect || addAutoFill.course
+    let appliedLabel = ''
+    let appliedCourse = ''
+
+    if (canApplyLabel) {
+      setAddSelect(suggestedLabel || '')
+      setAddNewDraft('')
+      appliedLabel = suggestedLabel
+    }
+
+    if (canApplyCourse) {
+      setAddCourseSelect(suggestedCourse || '')
+      appliedCourse = suggestedCourse
+    }
+
+    setAddAutoFill({
+      label: Boolean(appliedLabel),
+      course: Boolean(appliedCourse),
+    })
+
+    if (appliedLabel || appliedCourse || (!suggestedLabel && !suggestedCourse)) {
+      setAddSuggestion(formatResourceLabelSuggestion({ label: appliedLabel, courseLabel: appliedCourse }))
+      return
+    }
+
+    setAddSuggestion('Found a matching label or course from the file name, but kept your current selection.')
   }
 
   async function submitAdd(e) {
@@ -118,11 +270,14 @@ export default function Resources() {
       resolvedLabel = addSelect
     }
 
+    const resolvedCourseLabel = addCourseSelect || null
+
     setAddBusy(true)
     setBanner(null)
     const result = await addResource({
       file: addFile,
       label: resolvedLabel,
+      courseLabel: resolvedCourseLabel,
     })
     setAddBusy(false)
     if (!result.ok) {
@@ -132,7 +287,10 @@ export default function Resources() {
     setShowAdd(false)
     setAddFile(null)
     setAddSelect('')
+    setAddCourseSelect('')
     setAddNewDraft('')
+    setAddSuggestion('')
+    setAddAutoFill({ label: false, course: false })
     if (addFileRef.current) addFileRef.current.value = ''
     setBanner({ type: 'success', text: 'Resource saved.' })
     setTimeout(() => setBanner(null), 4000)
@@ -141,6 +299,7 @@ export default function Resources() {
   function startEdit(r) {
     setEditingId(r.id)
     setEditSelect(r.label ?? '')
+    setEditCourseSelect(r.courseLabel ?? '')
     setEditNewDraft('')
   }
 
@@ -165,7 +324,10 @@ export default function Resources() {
       next = editSelect
     }
 
+    const nextCourse = editCourseSelect || null
+
     updateResourceLabel(editingId, next)
+    updateResourceCourseLabel(editingId, nextCourse)
     setEditingId(null)
     setBanner(null)
   }
@@ -227,19 +389,23 @@ export default function Resources() {
                     const f = input.files?.[0] ?? null
                     if (!f) {
                       setAddFile(null)
+                      setAddSuggestion('')
                       return
                     }
                     const check = validateChatFile(f)
                     if (!check.ok) {
                       setBanner({ type: 'error', text: check.error })
                       setAddFile(null)
+                      setAddSuggestion('')
                       input.value = ''
                       return
                     }
                     setBanner(null)
                     setAddFile(f)
+                    applyFileNameSuggestions(f)
                   }}
                 />
+                {addSuggestion && <p className={styles.suggestionHint}>{addSuggestion}</p>}
               </div>
               <div className={styles.field}>
                 <label className={styles.label} htmlFor="resource-label-select">
@@ -252,6 +418,7 @@ export default function Resources() {
                   onChange={(e) => {
                     const v = e.target.value
                     setAddSelect(v)
+                    setAddAutoFill((prev) => ({ ...prev, label: false }))
                     if (v !== '__create__') setAddNewDraft('')
                   }}
                   disabled={addBusy}
@@ -284,6 +451,7 @@ export default function Resources() {
                         const r = addLabelPreset(addNewDraft)
                         if (r.ok) {
                           setAddSelect(r.label)
+                          setAddAutoFill((prev) => ({ ...prev, label: false }))
                           setAddNewDraft('')
                         } else {
                           setBanner({ type: 'error', text: r.error || 'Invalid label.' })
@@ -294,6 +462,29 @@ export default function Resources() {
                     </button>
                   </div>
                 )}
+              </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="resource-course-select">
+                  Course <span className={styles.optional}>(optional)</span>
+                </label>
+                <select
+                  id="resource-course-select"
+                  className={styles.selectInput}
+                  value={addCourseSelect}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setAddCourseSelect(v)
+                    setAddAutoFill((prev) => ({ ...prev, course: false }))
+                  }}
+                  disabled={addBusy}
+                >
+                  <option value="">No course</option>
+                  {courseLabels.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className={styles.modalActions}>
                 <button type="button" className="btn btn-outline" disabled={addBusy} onClick={() => setShowAdd(false)}>
@@ -308,13 +499,113 @@ export default function Resources() {
         </div>
       )}
 
+      {labelManagerOpen && (
+        <div className={styles.modalBackdrop} role="presentation" onClick={() => setLabelManagerOpen(false)}>
+          <div
+            className={`${styles.modal} ${styles.labelManagerModal}`}
+            role="dialog"
+            aria-labelledby="label-manager-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="label-manager-title" className={styles.modalTitle}>
+              Edit labels
+            </h2>
+            {labelManagerError && (
+              <div className={`${styles.banner} ${styles.bannerError}`} role="alert">
+                {labelManagerError}
+              </div>
+            )}
+
+            <div className={styles.managerSections}>
+              <section className={styles.managerSection}>
+                <h3 className={styles.managerTitle}>Resource labels</h3>
+                <div className={styles.managerList}>
+                  {labelPresets.map((label) => {
+                    const draft = labelDrafts[label] ?? label
+                    const isUsed = usedResourceLabels.has(label.trim().toLowerCase())
+                    return (
+                      <div className={styles.managerRow} key={label}>
+                        <input
+                          className={styles.textInput}
+                          type="text"
+                          value={draft}
+                          onChange={(e) => setLabelDrafts((prev) => ({ ...prev, [label]: e.target.value }))}
+                          maxLength={120}
+                          aria-label={`Edit ${label} label`}
+                        />
+                        <button
+                          type="button"
+                          className={`btn btn-outline ${styles.btnSm}`}
+                          disabled={!draft.trim() || draft.trim() === label}
+                          onClick={() => saveManagedLabel(label)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-outline ${styles.btnSm} ${styles.btnDanger}`}
+                          disabled={isUsed}
+                          title={isUsed ? 'Remove this label from resources before deleting it.' : 'Remove unused label'}
+                          onClick={() => removeManagedLabel(label)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className={styles.managerSection}>
+                <h3 className={styles.managerTitle}>Courses</h3>
+                {courseLabels.length === 0 ? (
+                  <p className={styles.managerEmpty}>No course labels yet.</p>
+                ) : (
+                  <div className={styles.managerList}>
+                    {courseLabels.map((label) => {
+                      const draft = courseDrafts[label] ?? label
+                      return (
+                        <div className={styles.managerRow} key={label}>
+                          <input
+                            className={styles.textInput}
+                            type="text"
+                            value={draft}
+                            onChange={(e) => setCourseDrafts((prev) => ({ ...prev, [label]: e.target.value }))}
+                            maxLength={120}
+                            aria-label={`Edit ${label} course`}
+                          />
+                          <button
+                            type="button"
+                            className={`btn btn-outline ${styles.btnSm}`}
+                            disabled={!draft.trim() || draft.trim() === label}
+                            onClick={() => saveManagedCourse(label)}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className={styles.modalActions}>
+              <button type="button" className="btn btn-primary" onClick={() => setLabelManagerOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card" style={{ marginTop: 20 }}>
         <form className={styles.searchBar} onSubmit={applySearch} role="search">
           <input
             className={styles.searchInput}
             type="search"
             name="resource-search"
-            placeholder="Search by file name, label, or type (PDF / DOCX)…"
+            placeholder="Search by file name, label, type, or flashcard set..."
             value={searchDraft}
             onChange={(e) => setSearchDraft(e.target.value)}
             aria-label="Search saved resources"
@@ -356,14 +647,40 @@ export default function Resources() {
             {label}
           </button>
         ))}
+        <button type="button" className={`btn btn-outline ${styles.btnSm}`} onClick={openLabelManager}>
+          Edit labels
+        </button>
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <h2 className={styles.sectionTitle}>AI-Recommended Resources</h2>
-        <div className="placeholder-block" style={{ marginTop: 12 }}>
-          <p>AI recommendations will appear here once you add subjects.</p>
-        </div>
+      <div className={styles.filterRow} style={{ marginTop: 12 }}>
+        <span style={{ fontWeight: 600, marginRight: 8, display: 'inline-block' }}>Courses:</span>
+        <button
+          type="button"
+          className={`${styles.filterBtn} ${filterCourseId === 'all' ? styles.filterActive : ''}`}
+          onClick={() => setFilterCourseId('all')}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          className={`${styles.filterBtn} ${filterCourseId === 'none' ? styles.filterActive : ''}`}
+          onClick={() => setFilterCourseId('none')}
+        >
+          No course
+        </button>
+        {courseLabels.map((label) => (
+          <button
+            key={label}
+            type="button"
+            className={`${styles.filterBtn} ${filterCourseId === label ? styles.filterActive : ''}`}
+            onClick={() => setFilterCourseId(label)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+
+      <FlashcardSets filterCourseId={filterCourseId} searchKeyword={searchKeyword} />
 
       <div className="card" style={{ marginTop: 16 }}>
         <h2 className={styles.sectionTitle}>Saved resources</h2>
@@ -378,6 +695,10 @@ export default function Resources() {
         ) : labelFiltered.length === 0 ? (
           <div className="placeholder-block" style={{ marginTop: 12 }}>
             <p>No resources match this label filter.</p>
+          </div>
+        ) : courseFiltered.length === 0 ? (
+          <div className="placeholder-block" style={{ marginTop: 12 }}>
+            <p>No resources match this course filter.</p>
           </div>
         ) : visibleResources.length === 0 ? (
           <div className="placeholder-block" style={{ marginTop: 12 }}>
@@ -396,6 +717,7 @@ export default function Resources() {
                 <tr>
                   <th>File</th>
                   <th>Label</th>
+                  <th>Course</th>
                   <th>Type</th>
                   <th>Added</th>
                   <th />
@@ -481,9 +803,59 @@ export default function Resources() {
                         </div>
                       )}
                     </td>
+                    <td className={styles.cellLabel}>
+                      {editingId === r.id ? (
+                        <div className={styles.editCol}>
+                          <select
+                            className={styles.selectInput}
+                            value={editCourseSelect}
+                            onChange={(e) => {
+                              setEditCourseSelect(e.target.value)
+                            }}
+                            aria-label="Choose course"
+                          >
+                            <option value="">No course</option>
+                            {labelOptionsFor(courseLabels, r.courseLabel || undefined).map((l) => (
+                              <option key={l} value={l}>
+                                {l}
+                              </option>
+                            ))}
+                          </select>
+                          <div className={styles.editActions}>
+                            <button type="button" className={`btn btn-primary ${styles.btnSm}`} onClick={saveEdit}>
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-outline ${styles.btnSm}`}
+                              onClick={() => setEditingId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={styles.labelRow}>
+                          <span className={r.courseLabel ? styles.labelText : styles.labelNone}>
+                            {r.courseLabel || 'No course'}
+                          </span>
+                          <button type="button" className={`btn btn-outline ${styles.btnSm}`} onClick={() => startEdit(r)}>
+                            Edit
+                          </button>
+                        </div>
+                      )}
+                    </td>
                     <td>{fileKindLabel(r.mime, r.name)}</td>
                     <td className={styles.cellDate}>{formatAdded(r.createdAt)}</td>
                     <td className={styles.cellActions}>
+                      <button
+                        type="button"
+                        className={`btn btn-outline ${styles.btnSm}`}
+                        onClick={() => setViewingResourceId(r.id)}
+                        title="View document"
+                      >
+                        View
+                      </button>
                       <button
                         type="button"
                         className={`btn btn-outline ${styles.btnSm}`}
@@ -506,6 +878,13 @@ export default function Resources() {
           </div>
         )}
       </div>
+
+      {viewingResourceId && (
+        <DocumentViewer
+          resource={resources.find((r) => r.id === viewingResourceId)}
+          onClose={() => setViewingResourceId(null)}
+        />
+      )}
     </div>
   )
 }
