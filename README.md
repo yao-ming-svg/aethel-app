@@ -1,4 +1,4 @@
-# Aethel — AI-Assisted Study Planner
+# Aethel AI-Assisted Study Planner
 
 **CS4800 Software Engineering — Spring 2026**  
 **Team:** Yiming Lu, Vincent Chen Yu, Jomar Veloso  
